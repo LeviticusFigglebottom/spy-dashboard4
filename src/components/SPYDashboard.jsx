@@ -187,16 +187,23 @@ const SPYDashboard = () => {
     }
   };
 
-  // Fetch historical data from Yahoo Finance (free alternative)
+  // Fetch historical data from Yahoo Finance via proxy (to avoid CORS)
   const fetchYahooHistorical = async (ticker, days = 100) => {
     try {
       const end = Math.floor(Date.now() / 1000);
       const start = end - (days * 86400);
       
-      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?period1=${start}&period2=${end}&interval=1d`;
+      // Use Vercel API route to proxy Yahoo Finance (avoids CORS)
+      const url = `/api/yahoo-historical?symbol=${ticker}&period1=${start}&period2=${end}`;
       
       console.log(`📊 Fetching ${days} days of ${ticker} from Yahoo Finance...`);
       const response = await fetch(url);
+      
+      if (!response.ok) {
+        console.log(`⚠️ Yahoo proxy returned ${response.status} for ${ticker}`);
+        return { success: false, data: [] };
+      }
+      
       const data = await response.json();
       
       if (data.chart?.result?.[0]) {
