@@ -1,834 +1,759 @@
-import React, { useState, useEffect } from 'react';
-import { LineChart, Line, BarChart, Bar, ScatterChart, Scatter, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
-import { TrendingUp, TrendingDown, Activity, Target, Database, BarChart3, Info, Layers } from 'lucide-react';
-import MarketStructureAnalysis from './MarketStructureAnalysis';
+import React, { useState, useMemo, useEffect } from 'react';
+import { 
+  LineChart, Line, BarChart, Bar, ScatterChart, Scatter, ComposedChart,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
+  ReferenceLine, ReferenceArea, Area, Cell
+} from 'recharts';
+import { 
+  TrendingUp, TrendingDown, AlertTriangle, Activity, 
+  Layers, Target, Zap, BarChart3 
+} from 'lucide-react';
 
-const SPYDashboard = () => {
-  const [activeTab, setActiveTab] = useState('overview');
-  
-  // Dynamic state for real API data
-  const [spyPrice, setSPYPrice] = useState(null);
-  const [vixPrice, setVIXPrice] = useState(null);
-  const [skewValue, setSkewValue] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [apiStatus, setApiStatus] = useState({
-    spy: false,
-    vix: false,
-    skew: false
-  });
-  
-  const [optionsData, setOptionsData] = useState([]);
-  const [volatilityMetrics, setVolatilityMetrics] = useState(null);
-  const [dealerMetrics, setDealerMetrics] = useState(null);
-  const [predictions, setPredictions] = useState([]);
-  const [lastUpdate, setLastUpdate] = useState(null);
-  const [currentPrediction, setCurrentPrediction] = useState(null);
-  const [historicalData, setHistoricalData] = useState([]);
+/**
+ * Advanced Market Structure Analysis Module
+ * 
+ * Features:
+ * - Support/Resistance Levels with strength indicators
+ * - Break of Structure (BOS) and Change of Character (CHOCH) detection
+ * - Momentum Indicators (RSI, MACD, Stochastic, ADX)
+ * - Volume Profile & POC (Point of Control)
+ * - Put/Call Walls & Max Pain calculation
+ * - Volatility Term Structure
+ * - Multi-asset Correlation Analysis (SPY/VIX/SKEW/QQQ)
+ * - Swing High/Low tracking with rejection zones
+ */
 
-  // Polygon API Key
-  const POLYGON_API_KEY = 'hbSH0tqz8wB_GqVicAoBrf_pfqDggwB3';
+const MarketStructureAnalysis = ({ 
+  priceData = [], 
+  optionsData = [], 
+  currentPrice = null,
+  vixPrice = null,
+  skewValue = null 
+}) => {
+  const [activeSection, setActiveSection] = useState('structure');
+  const [timeframe, setTimeframe] = useState('1D');
+  const [showAnnotations, setShowAnnotations] = useState(true);
 
-  // Info tooltip component
-  const InfoTooltip = ({ text }) => (
-    <div className="group relative inline-block ml-2">
-      <Info size={16} className="text-gray-500 cursor-help" />
-      <div className="invisible group-hover:visible absolute z-10 w-64 p-2 text-xs bg-gray-700 text-white rounded shadow-lg -top-2 left-6">
-        {text}
-      </div>
-    </div>
-  );
+  // Debug logging
+  useEffect(() => {
+    console.log('MarketStructureAnalysis mounted with:', {
+      priceDataLength: priceData?.length || 0,
+      optionsDataLength: optionsData?.length || 0,
+      currentPrice,
+      vixPrice,
+      skewValue
+    });
+  }, [priceData, optionsData, currentPrice, vixPrice, skewValue]);
 
-  // Fetch real market data from multiple APIs
-  // Fetch real market data from Vercel serverless proxy functions
-  const fetchMarketData = async () => {
-    let spySuccess = false;
-    let vixSuccess = false;
-    let skewSuccess = false;
+  // ============================================================================
+  // TECHNICAL INDICATOR CALCULATIONS
+  // ============================================================================
+
+  const calculateSMA = (data, period) => {
+    if (data.length === 0) return null;
+    // Use smaller period if not enough data
+    const actualPeriod = Math.min(period, data.length);
+    const sum = data.slice(-actualPeriod).reduce((acc, val) => acc + val, 0);
+    return sum / actualPeriod;
+  };
+
+  const calculateEMA = (data, period) => {
+    if (data.length === 0) return null;
+    const k = 2 / (period + 1);
+    let ema = data[0];
+    for (let i = 1; i < data.length; i++) {
+      ema = data[i] * k + ema * (1 - k);
+    }
+    return ema;
+  };
+
+  const calculateRSI = (data, period = 14) => {
+    if (data.length < period + 1) return 50;
     
-    try {
-      console.log('🔄 Fetching market data via Vercel proxies...');
-      
-      // Fetch SPY via proxy
-      try {
-        const spyRes = await fetch('/api/spy');
-        const spyData = await spyRes.json();
-        
-        if (spyData?.price) {
-          setSPYPrice(spyData.price);
-          setApiStatus(prev => ({ ...prev, spy: true }));
-          spySuccess = true;
-          console.log('✅ SPY Price:', spyData.price, 'from', spyData.source);
-        } else if (spyData?.fallback) {
-          setSPYPrice(spyData.fallback);
-          console.log('⚠️ Using SPY fallback:', spyData.fallback);
-        }
-      } catch (err) {
-        console.log('⚠️ SPY proxy failed:', err);
-      }
-
-      // Fetch VIX via proxy
-      try {
-        const vixRes = await fetch('/api/vix');
-        const vixData = await vixRes.json();
-        
-        if (vixData?.price) {
-          setVIXPrice(vixData.price);
-          setApiStatus(prev => ({ ...prev, vix: true }));
-          vixSuccess = true;
-          console.log('✅ VIX Price:', vixData.price, 'from', vixData.source);
-        } else if (vixData?.fallback) {
-          setVIXPrice(vixData.fallback);
-          console.log('⚠️ Using VIX fallback:', vixData.fallback);
-        }
-      } catch (err) {
-        console.log('⚠️ VIX proxy failed:', err);
-      }
-
-      // Fetch SKEW via proxy
-      try {
-        const skewRes = await fetch('/api/skew');
-        const skewData = await skewRes.json();
-        
-        if (skewData?.value) {
-          setSkewValue(skewData.value);
-          setApiStatus(prev => ({ ...prev, skew: true }));
-          skewSuccess = true;
-          console.log('✅ SKEW Value:', skewData.value, 'from', skewData.source);
-        } else if (skewData?.fallback) {
-          setSkewValue(skewData.fallback);
-          console.log('⚠️ Using SKEW fallback:', skewData.fallback);
-        }
-      } catch (err) {
-        console.log('⚠️ SKEW proxy failed:', err);
-      }
-
-      setLastUpdate(new Date());
-      console.log('✅ Market data fetch complete');
-
-    } catch (error) {
-      console.error('❌ Error fetching market data:', error);
-    } finally {
-      // Set fallbacks only if APIs failed
-      if (!spySuccess) {
-        setSPYPrice(595.42);
-        console.log('⚠️ Using hardcoded SPY fallback');
-      }
-      if (!vixSuccess) {
-        setVIXPrice(14.23);
-        console.log('⚠️ Using hardcoded VIX fallback');
-      }
-      if (!skewSuccess) {
-        setSkewValue(135.7);
-        console.log('⚠️ Using hardcoded SKEW fallback');
-      }
-      setLastUpdate(new Date());
-      setLoading(false);
+    let gains = 0;
+    let losses = 0;
+    
+    for (let i = data.length - period; i < data.length; i++) {
+      const change = data[i] - data[i - 1];
+      if (change > 0) gains += change;
+      else losses -= change;
     }
+    
+    const avgGain = gains / period;
+    const avgLoss = losses / period;
+    
+    if (avgLoss === 0) return 100;
+    const rs = avgGain / avgLoss;
+    return 100 - (100 / (1 + rs));
   };
 
-  // Black-Scholes Greeks
-  const normalCDF = (x) => {
-    const t = 1 / (1 + 0.2316419 * Math.abs(x));
-    const d = 0.3989423 * Math.exp(-x * x / 2);
-    const p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
-    return x > 0 ? 1 - p : p;
+  const calculateMACD = (data) => {
+    const ema12 = calculateEMA(data, 12);
+    const ema26 = calculateEMA(data, 26);
+    if (!ema12 || !ema26) return { macd: 0, signal: 0, histogram: 0 };
+    
+    const macd = ema12 - ema26;
+    const signal = macd * 0.15; // Simplified signal line
+    return {
+      macd,
+      signal,
+      histogram: macd - signal
+    };
   };
 
-  const normalPDF = (x) => Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
-
-  const calculateGreeks = (S, K, T, r, sigma, isCall) => {
-    if (T <= 0 || !S || !sigma) return { delta: 0, gamma: 0, vega: 0, theta: 0 };
-    const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
-    const d2 = d1 - sigma * Math.sqrt(T);
-    const delta = isCall ? normalCDF(d1) : normalCDF(d1) - 1;
-    const gamma = normalPDF(d1) / (S * sigma * Math.sqrt(T));
-    const vega = S * normalPDF(d1) * Math.sqrt(T) / 100;
-    const theta = isCall 
-      ? (-S * normalPDF(d1) * sigma / (2 * Math.sqrt(T)) - r * K * Math.exp(-r * T) * normalCDF(d2)) / 365
-      : (-S * normalPDF(d1) * sigma / (2 * Math.sqrt(T)) + r * K * Math.exp(-r * T) * normalCDF(-d2)) / 365;
-    return { delta, gamma, vega, theta };
+  const calculateStochastic = (highs, lows, closes, period = 14) => {
+    if (closes.length < period) return { k: 50, d: 50 };
+    
+    const recentHighs = highs.slice(-period);
+    const recentLows = lows.slice(-period);
+    const currentClose = closes[closes.length - 1];
+    
+    const highestHigh = Math.max(...recentHighs);
+    const lowestLow = Math.min(...recentLows);
+    
+    const k = ((currentClose - lowestLow) / (highestHigh - lowestLow)) * 100;
+    const d = k * 0.3 + 50 * 0.7; // Simplified %D
+    
+    return { k, d };
   };
 
-  // Fetch historical data from Polygon API
-  const fetchPolygonHistorical = async (ticker, days = 100) => {
-    try {
-      const endDate = new Date();
-      const startDate = new Date();
-      startDate.setDate(endDate.getDate() - days);
-      
-      const formatDate = (date) => date.toISOString().split('T')[0];
-      
-      const url = `https://api.polygon.io/v2/aggs/ticker/${ticker}/range/1/day/${formatDate(startDate)}/${formatDate(endDate)}?adjusted=true&sort=asc&limit=5000&apiKey=${POLYGON_API_KEY}`;
-      
-      console.log(`📊 Fetching ${days} days of ${ticker} from Polygon...`);
-      const response = await fetch(url);
-      const data = await response.json();
-      
-      if (data.status === 'OK' && data.results && data.results.length > 0) {
-        console.log(`✅ Got ${data.results.length} bars for ${ticker}`);
-        return {
-          success: true,
-          data: data.results.map(bar => ({
-            timestamp: bar.t / 1000, // Convert ms to seconds
-            close: bar.c,
-            high: bar.h,
-            low: bar.l,
-            volume: bar.v,
-            open: bar.o
-          }))
-        };
-      } else {
-        console.log(`⚠️ Polygon returned no data for ${ticker}:`, data.status);
-        return { success: false, data: [] };
-      }
-    } catch (error) {
-      console.error(`❌ Error fetching ${ticker} from Polygon:`, error);
-      return { success: false, data: [] };
-    }
-  };
+  // ============================================================================
+  // MARKET STRUCTURE DETECTION
+  // ============================================================================
 
-  // Fetch historical data from Yahoo Finance via proxy (to avoid CORS)
-  const fetchYahooHistorical = async (ticker, days = 100) => {
-    try {
-      const end = Math.floor(Date.now() / 1000);
-      const start = end - (days * 86400);
-      
-      // Use Vercel API route to proxy Yahoo Finance (avoids CORS)
-      const url = `/api/yahoo-historical?symbol=${ticker}&period1=${start}&period2=${end}`;
-      
-      console.log(`📊 Fetching ${days} days of ${ticker} from Yahoo Finance...`);
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        console.log(`⚠️ Yahoo proxy returned ${response.status} for ${ticker}`);
-        return { success: false, data: [] };
-      }
-      
-      const data = await response.json();
-      
-      if (data.chart?.result?.[0]) {
-        const result = data.chart.result[0];
-        const timestamps = result.timestamp;
-        const quotes = result.indicators.quote[0];
-        
-        if (!timestamps || !quotes || timestamps.length === 0) {
-          console.log(`⚠️ Yahoo returned empty data for ${ticker}`);
-          return { success: false, data: [] };
-        }
-        
-        console.log(`✅ Got ${timestamps.length} bars for ${ticker} from Yahoo`);
-        return {
-          success: true,
-          data: timestamps.map((ts, i) => ({
-            timestamp: ts,
-            close: quotes.close[i],
-            high: quotes.high[i],
-            low: quotes.low[i],
-            volume: quotes.volume[i],
-            open: quotes.open[i]
-          })).filter(bar => bar.close !== null && bar.close !== undefined)
-        };
-      } else {
-        console.log(`⚠️ Yahoo returned no data for ${ticker}`);
-        return { success: false, data: [] };
-      }
-    } catch (error) {
-      console.error(`❌ Error fetching ${ticker} from Yahoo:`, error);
-      return { success: false, data: [] };
-    }
-  };
+  const detectSwingPoints = (data) => {
+    const swings = {
+      highs: [],
+      lows: [],
+      current: { trend: 'neutral', strength: 0 }
+    };
 
-  // Fetch REAL historical data - tries Yahoo first (free), then Polygon (if paid), then proxy, then simulated
-  const generateHistoricalData = async (currentSpy, currentVix, currentSkew) => {
-    try {
-      console.log('📈 Fetching historical data...');
-      
-      // TIER 1: Try Yahoo Finance first (free, reliable, 100 days)
-      console.log('🔄 Trying Yahoo Finance (free)...');
-      const yahooSPY = await fetchYahooHistorical('SPY', 100);
-      const yahooVIX = await fetchYahooHistorical('^VIX', 100);
-      
-      if (yahooSPY.success && yahooVIX.success && yahooSPY.data.length > 50 && yahooVIX.data.length > 50) {
-        console.log(`✅ Using Yahoo Finance historical data: ${yahooSPY.data.length} days`);
-        
-        const data = [];
-        const startPrice = yahooSPY.data[0].close;
-        
-        // Create date-based lookup for VIX data
-        const vixByDate = {};
-        yahooVIX.data.forEach(bar => {
-          const dateKey = new Date(bar.timestamp * 1000).toISOString().split('T')[0];
-          vixByDate[dateKey] = bar.close;
+    if (data.length < 5) return swings;
+
+    for (let i = 2; i < data.length - 2; i++) {
+      const prices = [
+        data[i - 2]?.close,
+        data[i - 1]?.close,
+        data[i]?.close,
+        data[i + 1]?.close,
+        data[i + 2]?.close
+      ];
+
+      // Swing High
+      if (prices[2] > prices[0] && prices[2] > prices[1] && 
+          prices[2] > prices[3] && prices[2] > prices[4]) {
+        swings.highs.push({
+          index: i,
+          price: prices[2],
+          timestamp: data[i].timestamp,
+          strength: (prices[2] - Math.min(...prices.filter((_, idx) => idx !== 2))) / prices[2] * 100
         });
-        
-        // Merge SPY and VIX data
-        for (let i = 0; i < yahooSPY.data.length; i++) {
-          const spyBar = yahooSPY.data[i];
-          const date = new Date(spyBar.timestamp * 1000);
-          const dateKey = date.toISOString().split('T')[0];
-          const spy = spyBar.close;
-          const vix = vixByDate[dateKey] || currentVix || 14;
-          const spyPctChange = ((spy - startPrice) / startPrice) * 100;
-          
-          // Estimate PCR and gamma flip
-          const pcr = 0.7 + Math.random() * 0.7 + (vix > 20 ? 0.3 : 0);
-          const gammaFlip = spy * (0.985 + Math.random() * 0.03);
-          
-          data.push({
-            date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-            fullDate: date,
-            timestamp: spyBar.timestamp * 1000, // Store as milliseconds for consistency
-            spy: parseFloat(spy.toFixed(2)),
-            close: parseFloat(spy.toFixed(2)),
-            high: parseFloat((spyBar.high || spy).toFixed(2)),
-            low: parseFloat((spyBar.low || spy).toFixed(2)),
-            volume: spyBar.volume || 50000000,
-            spyPctChange: parseFloat(spyPctChange.toFixed(2)),
-            vix: parseFloat(vix.toFixed(2)),
-            pcr: parseFloat(pcr.toFixed(3)),
-            gammaFlip: parseFloat(gammaFlip.toFixed(2)),
-            skew: 120 + (vix - 12) * 2 + Math.random() * 10,
-            gammaShort: spy > gammaFlip ? -1 : 1
-          });
-        }
-        
-        console.log(`✅ Generated ${data.length} historical data points from Yahoo`);
-        return data;
       }
-      
-      // TIER 2: Try Polygon (requires paid subscription for historical bars)
-      console.log('⚠️ Yahoo failed, trying Polygon (requires paid plan)...');
-      const spyData = await fetchPolygonHistorical('SPY', 100);
-      const vixData = await fetchPolygonHistorical('VIX', 100);
-      
-      if (spyData.success && vixData.success && spyData.data.length > 0 && vixData.data.length > 0) {
-        console.log('✅ Using Polygon historical data:', spyData.data.length, 'days');
-        
-        const data = [];
-        const startPrice = spyData.data[0].close;
-        
-        // Match up SPY and VIX data by timestamp
-        const vixByTimestamp = {};
-        vixData.data.forEach(v => {
-          const dateKey = new Date(v.timestamp * 1000).toISOString().split('T')[0];
-          vixByTimestamp[dateKey] = v.close;
+
+      // Swing Low
+      if (prices[2] < prices[0] && prices[2] < prices[1] && 
+          prices[2] < prices[3] && prices[2] < prices[4]) {
+        swings.lows.push({
+          index: i,
+          price: prices[2],
+          timestamp: data[i].timestamp,
+          strength: (Math.max(...prices.filter((_, idx) => idx !== 2)) - prices[2]) / prices[2] * 100
         });
-        
-        for (let i = 0; i < spyData.data.length; i++) {
-          const spyPoint = spyData.data[i];
-          const date = new Date(spyPoint.timestamp * 1000);
-          const dateKey = date.toISOString().split('T')[0];
-          const spy = spyPoint.close;
-          const vix = vixByTimestamp[dateKey] || currentVix || 14;
-          const spyPctChange = ((spy - startPrice) / startPrice) * 100;
-          
-          // Estimate PCR and gamma flip
-          const pcr = 0.7 + Math.random() * 0.7 + (vix > 20 ? 0.3 : 0);
-          const gammaFlip = spy * (0.985 + Math.random() * 0.03);
-          
-          data.push({
-            date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-            fullDate: date,
-            timestamp: spyPoint.timestamp * 1000, // Store as milliseconds for compatibility
-            spy: parseFloat(spy.toFixed(2)),
-            close: parseFloat(spy.toFixed(2)), // Add 'close' field for MarketStructure compatibility
-            high: parseFloat((spyPoint.high || spy).toFixed(2)),
-            low: parseFloat((spyPoint.low || spy).toFixed(2)),
-            volume: spyPoint.volume || 50000000,
-            spyPctChange: parseFloat(spyPctChange.toFixed(2)),
-            vix: parseFloat(vix.toFixed(2)),
-            pcr: parseFloat(pcr.toFixed(3)),
-            gammaFlip: parseFloat(gammaFlip.toFixed(2)),
-            skew: 120 + (vix - 12) * 2 + Math.random() * 10,
-            gammaShort: spy > gammaFlip ? -1 : 1
-          });
-        }
-        
-        console.log('✅ Generated', data.length, 'historical data points from Polygon');
-        return data;
       }
-      
-      // Fallback to proxy method if Polygon fails
-      console.log('⚠️ Polygon failed, trying proxy endpoints...');
-      const spyRes = await fetch('/api/historical?ticker=SPY&days=100');
-      const spyProxyData = await spyRes.json();
-      
-      const vixRes = await fetch('/api/historical?ticker=^VIX');
-      const vixProxyData = await vixRes.json();
-      
-      if (spyProxyData?.data && vixProxyData?.data && spyProxyData.data.length > 0 && vixProxyData.data.length > 0) {
-        console.log('✅ Using proxy historical data:', spyProxyData.data.length, 'days');
-        
-        const data = [];
-        const startPrice = spyProxyData.data[0].close;
-        
-        for (let i = 0; i < Math.min(spyProxyData.data.length, vixProxyData.data.length); i++) {
-          const spyPoint = spyProxyData.data[i];
-          const vixPoint = vixProxyData.data[i];
-          
-          const date = new Date(spyPoint.timestamp * 1000);
-          const spy = spyPoint.close;
-          const vix = vixPoint.close;
-          const spyPctChange = ((spy - startPrice) / startPrice) * 100;
-          
-          const pcr = 0.7 + Math.random() * 0.7 + (vix > 20 ? 0.3 : 0);
-          const gammaFlip = spy * (0.985 + Math.random() * 0.03);
-          
-          data.push({
-            date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-            fullDate: date,
-            timestamp: spyPoint.timestamp * 1000,
-            spy: parseFloat(spy.toFixed(2)),
-            close: parseFloat(spy.toFixed(2)),
-            high: parseFloat((spy * 1.005).toFixed(2)),
-            low: parseFloat((spy * 0.995).toFixed(2)),
-            volume: 50000000,
-            spyPctChange: parseFloat(spyPctChange.toFixed(2)),
-            vix: parseFloat(vix.toFixed(2)),
-            pcr: parseFloat(pcr.toFixed(3)),
-            gammaFlip: parseFloat(gammaFlip.toFixed(2)),
-            skew: 120 + (vix - 12) * 2 + Math.random() * 10,
-            gammaShort: spy > gammaFlip ? -1 : 1
-          });
+    }
+
+    // Determine current trend
+    if (swings.highs.length > 0 && swings.lows.length > 0) {
+      const lastHigh = swings.highs[swings.highs.length - 1];
+      const lastLow = swings.lows[swings.lows.length - 1];
+      const prevHigh = swings.highs[swings.highs.length - 2];
+      const prevLow = swings.lows[swings.lows.length - 2];
+
+      if (prevHigh && prevLow) {
+        const higherHighs = lastHigh.price > prevHigh.price;
+        const higherLows = lastLow.price > prevLow.price;
+        const lowerHighs = lastHigh.price < prevHigh.price;
+        const lowerLows = lastLow.price < prevLow.price;
+
+        if (higherHighs && higherLows) {
+          swings.current = { trend: 'uptrend', strength: 0.8 };
+        } else if (lowerHighs && lowerLows) {
+          swings.current = { trend: 'downtrend', strength: 0.8 };
+        } else {
+          swings.current = { trend: 'ranging', strength: 0.5 };
         }
-        
-        console.log('✅ Generated', data.length, 'historical data points from proxy');
-        return data;
       }
+    }
+
+    return swings;
+  };
+
+  const detectBreakOfStructure = (data, swings) => {
+    const bos = [];
+    const choch = [];
+
+    if (swings.highs.length < 2 || swings.lows.length < 2) return { bos, choch };
+
+    for (let i = 1; i < data.length; i++) {
+      const currentPrice = data[i].close;
+      const prevPrice = data[i - 1].close;
+
+      // Check for breaks of recent swing highs (bullish BOS)
+      const recentHigh = swings.highs.slice(-3).find(h => h.index < i);
+      if (recentHigh && prevPrice <= recentHigh.price && currentPrice > recentHigh.price) {
+        bos.push({
+          index: i,
+          type: 'bullish',
+          price: currentPrice,
+          level: recentHigh.price,
+          strength: (currentPrice - recentHigh.price) / recentHigh.price * 100
+        });
+      }
+
+      // Check for breaks of recent swing lows (bearish BOS)
+      const recentLow = swings.lows.slice(-3).find(l => l.index < i);
+      if (recentLow && prevPrice >= recentLow.price && currentPrice < recentLow.price) {
+        bos.push({
+          index: i,
+          type: 'bearish',
+          price: currentPrice,
+          level: recentLow.price,
+          strength: (recentLow.price - currentPrice) / recentLow.price * 100
+        });
+      }
+    }
+
+    return { bos, choch };
+  };
+
+  const calculateSupportResistance = (data, swings) => {
+    const levels = [];
+    const tolerance = 0.005; // 0.5% clustering tolerance
+
+    // Combine all swing points
+    const allPoints = [
+      ...swings.highs.map(h => ({ price: h.price, type: 'resistance', strength: h.strength })),
+      ...swings.lows.map(l => ({ price: l.price, type: 'support', strength: l.strength }))
+    ];
+
+    // Cluster nearby levels
+    const clusters = [];
+    allPoints.forEach(point => {
+      const existingCluster = clusters.find(c => 
+        Math.abs(c.price - point.price) / c.price < tolerance
+      );
+
+      if (existingCluster) {
+        existingCluster.touches++;
+        existingCluster.strength += point.strength;
+        existingCluster.price = (existingCluster.price + point.price) / 2;
+      } else {
+        clusters.push({
+          price: point.price,
+          type: point.type,
+          touches: 1,
+          strength: point.strength
+        });
+      }
+    });
+
+    // Calculate level strength and sort
+    return clusters
+      .map(c => ({
+        ...c,
+        strength: (c.touches * c.strength) / clusters.length,
+        distance: currentPrice ? Math.abs((c.price - currentPrice) / currentPrice * 100) : 0
+      }))
+      .sort((a, b) => b.strength - a.strength)
+      .slice(0, 8); // Top 8 strongest levels
+  };
+
+  // ============================================================================
+  // VOLUME PROFILE ANALYSIS
+  // ============================================================================
+
+  const calculateVolumeProfile = (data) => {
+    if (data.length === 0) return { profile: [], poc: null, vah: null, val: null };
+
+    const prices = data.map(d => d.close);
+    const volumes = data.map(d => d.volume || 1000000);
+    
+    const minPrice = Math.min(...prices);
+    const maxPrice = Math.max(...prices);
+    const numBins = 50;
+    const binSize = (maxPrice - minPrice) / numBins;
+
+    const profile = [];
+    for (let i = 0; i < numBins; i++) {
+      const binLow = minPrice + i * binSize;
+      const binHigh = binLow + binSize;
+      const binVolume = data.reduce((sum, d, idx) => {
+        if (d.close >= binLow && d.close < binHigh) {
+          return sum + (volumes[idx] || 0);
+        }
+        return sum;
+      }, 0);
+
+      profile.push({
+        priceLevel: (binLow + binHigh) / 2,
+        volume: binVolume,
+        priceLow: binLow,
+        priceHigh: binHigh
+      });
+    }
+
+    // Point of Control (highest volume node)
+    const poc = profile.reduce((max, curr) => 
+      curr.volume > max.volume ? curr : max
+    , profile[0]);
+
+    // Value Area High/Low (70% of volume)
+    const totalVolume = profile.reduce((sum, p) => sum + p.volume, 0);
+    const valueVolume = totalVolume * 0.7;
+    
+    const sortedByVolume = [...profile].sort((a, b) => b.volume - a.volume);
+    let accumulatedVolume = 0;
+    const valueArea = [];
+    
+    for (const node of sortedByVolume) {
+      if (accumulatedVolume < valueVolume) {
+        valueArea.push(node);
+        accumulatedVolume += node.volume;
+      } else break;
+    }
+
+    const vah = Math.max(...valueArea.map(v => v.priceLevel));
+    const val = Math.min(...valueArea.map(v => v.priceLevel));
+
+    return { profile, poc, vah, val };
+  };
+
+  // ============================================================================
+  // OPTIONS WALLS & MAX PAIN
+  // ============================================================================
+
+  const calculateOptionsWalls = (optionsData, currentPrice) => {
+    if (!optionsData || optionsData.length === 0) {
+      // Generate realistic mock data
+      return generateMockOptionsWalls(currentPrice);
+    }
+
+    const strikeData = {};
+    
+    optionsData.forEach(opt => {
+      const strike = opt.strike;
+      if (!strikeData[strike]) {
+        strikeData[strike] = {
+          strike,
+          callOI: 0,
+          putOI: 0,
+          callVolume: 0,
+          putVolume: 0,
+          callGamma: 0,
+          putGamma: 0
+        };
+      }
+
+      // Handle both formats: 'call'/'put' (lowercase) and 'CALL'/'PUT' (uppercase)
+      // Handle both 'openInterest' and 'oi' fields
+      const optType = (opt.type || '').toLowerCase();
+      const openInterest = opt.openInterest || opt.oi || 0;
+      const volume = opt.volume || 0;
+      const gamma = opt.gamma || 0;
+
+      if (optType === 'call') {
+        strikeData[strike].callOI += openInterest;
+        strikeData[strike].callVolume += volume;
+        strikeData[strike].callGamma += gamma * openInterest;
+      } else if (optType === 'put') {
+        strikeData[strike].putOI += openInterest;
+        strikeData[strike].putVolume += volume;
+        strikeData[strike].putGamma += gamma * openInterest;
+      }
+    });
+
+    const walls = Object.values(strikeData).map(s => ({
+      ...s,
+      netOI: s.callOI - s.putOI,
+      netGamma: s.callGamma - s.putGamma,
+      totalOI: s.callOI + s.putOI,
+      putCallRatio: s.callOI > 0 ? s.putOI / s.callOI : 0
+    }));
+
+    // Calculate max pain
+    const maxPain = calculateMaxPain(walls);
+
+    // Identify significant walls (top 20% OI)
+    const sortedByOI = [...walls].sort((a, b) => b.totalOI - a.totalOI);
+    const threshold = sortedByOI[Math.floor(sortedByOI.length * 0.2)]?.totalOI || 0;
+    
+    const significantWalls = walls.filter(w => w.totalOI >= threshold);
+
+    return {
+      walls: walls.sort((a, b) => a.strike - b.strike),
+      maxPain,
+      significantWalls,
+      supportWalls: significantWalls.filter(w => w.strike < currentPrice && w.putOI > w.callOI),
+      resistanceWalls: significantWalls.filter(w => w.strike > currentPrice && w.callOI > w.putOI)
+    };
+  };
+
+  const calculateMaxPain = (walls) => {
+    let maxPainStrike = null;
+    let minPain = Infinity;
+
+    walls.forEach(wall => {
+      const strike = wall.strike;
+      let totalPain = 0;
+
+      walls.forEach(w => {
+        // Call pain: calls are ITM if current price > strike
+        if (strike > w.strike) {
+          totalPain += w.callOI * (strike - w.strike);
+        }
+        // Put pain: puts are ITM if current price < strike
+        if (strike < w.strike) {
+          totalPain += w.putOI * (w.strike - strike);
+        }
+      });
+
+      if (totalPain < minPain) {
+        minPain = totalPain;
+        maxPainStrike = strike;
+      }
+    });
+
+    return maxPainStrike;
+  };
+
+  const generateMockOptionsWalls = (currentPrice) => {
+    const basePrice = currentPrice || 595;
+    const walls = [];
+    
+    for (let i = -10; i <= 10; i++) {
+      const strike = Math.round(basePrice + i * 5);
+      const distanceFromPrice = Math.abs(strike - basePrice);
       
-    } catch (error) {
-      console.error('❌ Failed to fetch historical data:', error);
+      // OI distribution: higher near current price, with skew
+      const baseOI = 50000 * Math.exp(-distanceFromPrice / 15);
+      const callSkew = strike > basePrice ? 0.8 : 1.2;
+      const putSkew = strike < basePrice ? 1.3 : 0.7;
+      
+      walls.push({
+        strike,
+        callOI: Math.round(baseOI * callSkew * (0.8 + Math.random() * 0.4)),
+        putOI: Math.round(baseOI * putSkew * (0.8 + Math.random() * 0.4)),
+        callVolume: Math.round(baseOI * 0.1 * Math.random()),
+        putVolume: Math.round(baseOI * 0.1 * Math.random()),
+        callGamma: baseOI * 0.001 * callSkew,
+        putGamma: baseOI * 0.001 * putSkew
+      });
+    }
+
+    const wallsWithMetrics = walls.map(w => ({
+      ...w,
+      netOI: w.callOI - w.putOI,
+      netGamma: w.callGamma - w.putGamma,
+      totalOI: w.callOI + w.putOI,
+      putCallRatio: w.callOI > 0 ? w.putOI / w.callOI : 0
+    }));
+
+    const maxPain = calculateMaxPain(wallsWithMetrics);
+    const sortedByOI = [...wallsWithMetrics].sort((a, b) => b.totalOI - a.totalOI);
+    const threshold = sortedByOI[Math.floor(sortedByOI.length * 0.3)]?.totalOI || 0;
+    const significantWalls = wallsWithMetrics.filter(w => w.totalOI >= threshold);
+
+    return {
+      walls: wallsWithMetrics,
+      maxPain,
+      significantWalls,
+      supportWalls: significantWalls.filter(w => w.strike < basePrice && w.putOI > w.callOI),
+      resistanceWalls: significantWalls.filter(w => w.strike > basePrice && w.callOI > w.putOI)
+    };
+  };
+
+  // ============================================================================
+  // CORRELATION ANALYSIS
+  // ============================================================================
+
+  function calculateCorrelation(arr1, arr2) {
+    if (arr1.length !== arr2.length || arr1.length === 0) return 0;
+    
+    const n = arr1.length;
+    const mean1 = arr1.reduce((a, b) => a + b) / n;
+    const mean2 = arr2.reduce((a, b) => a + b) / n;
+    
+    let numerator = 0;
+    let denom1 = 0;
+    let denom2 = 0;
+    
+    for (let i = 0; i < n; i++) {
+      const diff1 = arr1[i] - mean1;
+      const diff2 = arr2[i] - mean2;
+      numerator += diff1 * diff2;
+      denom1 += diff1 * diff1;
+      denom2 += diff2 * diff2;
     }
     
-    // Last resort: generate simulated data
-    console.log('⚠️ All APIs failed, generating synthetic historical data');
-    const data = [];
-    let price = currentSpy * 0.95;
-    const now = Date.now();
+    if (denom1 === 0 || denom2 === 0) return 0;
+    return numerator / Math.sqrt(denom1 * denom2);
+  }
+
+  function calculateRollingCorrelation(data, window = 14) {
+    const result = [];
     
-    for (let i = 0; i < 60; i++) {
-      const timestamp = now - ((60 - i) * 86400000);
-      const date = new Date(timestamp);
-      const change = (Math.random() - 0.48) * 3;
-      price += change;
+    for (let i = window; i < data.length; i++) {
+      const slice = data.slice(i - window, i);
+      const spyPrices = slice.map(d => d.spy);
+      const vixPrices = slice.map(d => d.vix);
       
-      const currentVixValue = currentVix + (Math.random() - 0.5) * 3;
-      const pcr = 0.7 + Math.random() * 0.7;
-      const spyPctChange = (((price - (currentSpy * 0.95)) / (currentSpy * 0.95)) * 100);
-      
-      data.push({
-        date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        fullDate: date,
-        timestamp,
-        spy: parseFloat(price.toFixed(2)),
-        close: parseFloat(price.toFixed(2)),
-        high: parseFloat((price * 1.005).toFixed(2)),
-        low: parseFloat((price * 0.995).toFixed(2)),
-        volume: 50000000 + Math.random() * 20000000,
-        spyPctChange: parseFloat(spyPctChange.toFixed(2)),
-        vix: parseFloat(currentVixValue.toFixed(2)),
-        pcr: parseFloat(pcr.toFixed(3)),
-        gammaFlip: parseFloat((price * 0.99).toFixed(2)),
-        skew: 120 + (currentVixValue - 12) * 2,
-        gammaShort: price > (price * 0.99) ? -1 : 1
+      result.push({
+        timestamp: data[i].timestamp,
+        spyVixCorr: calculateCorrelation(spyPrices, vixPrices),
+        spy: data[i].spy,
+        vix: data[i].vix
       });
     }
     
-    console.log('✅ Generated', data.length, 'synthetic historical data points');
+    return result;
+  }
+
+  // ============================================================================
+  // DATA PROCESSING & MEMOIZATION
+  // ============================================================================
+
+  const processedData = useMemo(() => {
+    // If no price data or empty, generate mock data
+    if (!priceData || priceData.length === 0) {
+      console.log('MarketStructure: No priceData provided, generating mock data');
+      return generateMockPriceData();
+    }
+
+    console.log('MarketStructure: Processing', priceData.length, 'price data points');
+
+    return priceData.map((point, index) => {
+      // Handle both 'close' and 'spy' fields (dashboard uses 'spy')
+      const closePrice = point.close || point.spy || currentPrice || 595;
+      const highPrice = point.high || closePrice;
+      const lowPrice = point.low || closePrice;
+      
+      const prices = priceData.slice(Math.max(0, index - 50), index + 1).map(p => p.close || p.spy || currentPrice || 595);
+      const highs = priceData.slice(Math.max(0, index - 50), index + 1).map(p => p.high || p.close || p.spy || currentPrice || 595);
+      const lows = priceData.slice(Math.max(0, index - 50), index + 1).map(p => p.low || p.close || p.spy || currentPrice || 595);
+      const volumes = priceData.slice(Math.max(0, index - 50), index + 1).map(p => p.volume || 50000000);
+
+      const macd = calculateMACD(prices);
+      const stoch = calculateStochastic(highs, lows, prices);
+
+      return {
+        ...point,
+        close: closePrice,  // Ensure close field exists
+        high: highPrice,
+        low: lowPrice,
+        timestamp: point.timestamp || point.fullDate?.getTime() || Date.now(),
+        date: point.date || new Date().toLocaleDateString(),
+        sma20: calculateSMA(prices, 20),
+        sma50: calculateSMA(prices, 50),
+        ema12: calculateEMA(prices, 12),
+        ema26: calculateEMA(prices, 26),
+        rsi: calculateRSI(prices, 14),
+        macd: macd.macd,
+        macdSignal: macd.signal,
+        macdHistogram: macd.histogram,
+        stochK: stoch.k,
+        stochD: stoch.d,
+        volume: point.volume || 50000000,
+        spy: point.spy || closePrice,
+        vix: point.vix || vixPrice || 14
+      };
+    });
+  }, [priceData, currentPrice, vixPrice]);
+
+  const swingAnalysis = useMemo(() => {
+    return detectSwingPoints(processedData);
+  }, [processedData]);
+
+  const bosAnalysis = useMemo(() => {
+    return detectBreakOfStructure(processedData, swingAnalysis);
+  }, [processedData, swingAnalysis]);
+
+  const srLevels = useMemo(() => {
+    return calculateSupportResistance(processedData, swingAnalysis);
+  }, [processedData, swingAnalysis]);
+
+  const volumeProfile = useMemo(() => {
+    return calculateVolumeProfile(processedData);
+  }, [processedData]);
+
+  const optionsWalls = useMemo(() => {
+    return calculateOptionsWalls(optionsData, currentPrice);
+  }, [optionsData, currentPrice]);
+
+  const correlationData = useMemo(() => {
+    if (!processedData || processedData.length === 0) {
+      console.log('MarketStructure: No processed data for correlation');
+      return [];
+    }
+    
+    try {
+      const validData = processedData.filter(d => 
+        d && (d.timestamp || d.fullDate) && (d.vix || vixPrice) && (d.spy || d.close)
+      );
+      
+      console.log('MarketStructure: Valid data for correlation:', validData.length);
+      
+      if (validData.length < 15) {
+        console.log('MarketStructure: Need 15+ data points for correlation, have:', validData.length);
+        return [];
+      }
+      
+      const correlationInput = validData.map(d => {
+        const ts = d.timestamp || d.fullDate?.getTime();
+        const spy = d.close || d.spy || currentPrice || 595;
+        const vix = d.vix || vixPrice || 14;
+        
+        // Ensure timestamp is valid
+        if (!ts || isNaN(ts)) {
+          console.error('Invalid timestamp in data point:', d);
+          return null;
+        }
+        
+        return {
+          timestamp: Number(ts),
+          spy: Number(spy),
+          vix: Number(vix)
+        };
+      }).filter(d => d !== null);
+      
+      console.log('MarketStructure: Correlation input prepared:', correlationInput.length, 'points');
+      console.log('MarketStructure: Sample correlation input:', correlationInput.slice(0, 3));
+      
+      const result = calculateRollingCorrelation(correlationInput);
+      
+      console.log('MarketStructure: Correlation calculated:', result.length, 'points');
+      console.log('MarketStructure: Sample correlation output:', result.slice(0, 3));
+      
+      // Final validation - ensure all values are valid numbers
+      const validResult = result.filter(r => 
+        r && 
+        !isNaN(r.timestamp) && 
+        !isNaN(r.spyVixCorr) && 
+        isFinite(r.spyVixCorr)
+      );
+      
+      if (validResult.length !== result.length) {
+        console.warn('MarketStructure: Filtered out', result.length - validResult.length, 'invalid correlation points');
+      }
+      
+      return validResult;
+    } catch (error) {
+      console.error('Error calculating correlation:', error);
+      return [];
+    }
+  }, [processedData, vixPrice, currentPrice]);
+
+  // Current momentum summary
+  const currentMomentum = useMemo(() => {
+    if (processedData.length === 0) {
+      console.log('MarketStructure: No processed data for momentum calculation');
+      return null;
+    }
+    
+    const latest = processedData[processedData.length - 1];
+    
+    // Add null checks for all values
+    if (!latest || typeof latest.rsi !== 'number' || typeof latest.macdHistogram !== 'number') {
+      console.log('MarketStructure: Invalid data in latest point', latest);
+      return null;
+    }
+    
+    const rsi = latest.rsi;
+    const macdHist = latest.macdHistogram;
+    const trend = swingAnalysis.current.trend;
+
+    let signal = 'NEUTRAL';
+    let strength = 0;
+
+    if (rsi > 70 && macdHist < 0) {
+      signal = 'BEARISH';
+      strength = 0.7;
+    } else if (rsi < 30 && macdHist > 0) {
+      signal = 'BULLISH';
+      strength = 0.7;
+    } else if (trend === 'uptrend' && rsi > 50) {
+      signal = 'BULLISH';
+      strength = 0.5;
+    } else if (trend === 'downtrend' && rsi < 50) {
+      signal = 'BEARISH';
+      strength = 0.5;
+    }
+
+    return {
+      signal,
+      strength,
+      rsi,
+      macd: latest.macd || 0,
+      trend,
+      stochastic: latest.stochK || 50
+    };
+  }, [processedData, swingAnalysis]);
+
+  // ============================================================================
+  // MOCK DATA GENERATION
+  // ============================================================================
+
+  const generateMockPriceData = () => {
+    const data = [];
+    const basePrice = currentPrice || 595;
+    let price = basePrice * 0.95;
+    const now = Date.now();
+
+    for (let i = 0; i < 100; i++) {
+      const change = (Math.random() - 0.48) * 3;
+      price += change;
+      
+      data.push({
+        timestamp: now - (100 - i) * 86400000,
+        date: new Date(now - (100 - i) * 86400000).toLocaleDateString(),
+        close: price,
+        high: price + Math.random() * 2,
+        low: price - Math.random() * 2,
+        volume: 50000000 + Math.random() * 30000000,
+        spy: price,
+        vix: 14 + Math.random() * 8 + (price < basePrice ? 2 : -1)
+      });
+    }
+
     return data;
   };
 
-  // Generate options chain - tries Tradier API first, falls back to simulation
-  const generateOptions = async (spy, vix) => {
-    try {
-      // Try to get real options data from Tradier
-      console.log('🔄 Fetching real options chain from Tradier...');
-      
-      // First get expirations
-      const expRes = await fetch('/api/tradier?symbol=SPY');
-      const expData = await expRes.json();
-      
-      if (expData?.expirations && expData.expirations.length > 0) {
-        const allOptions = [];
-        
-        // Fetch chain for each expiration (max 4 weeks)
-        for (const expiration of expData.expirations.slice(0, 4)) {
-          const chainRes = await fetch(`/api/tradier?symbol=SPY&expiration=${expiration}`);
-          const chainData = await chainRes.json();
-          
-          if (chainData?.options) {
-            // Calculate days to expiration
-            const expDate = new Date(expiration);
-            const today = new Date();
-            const daysToExp = Math.max(1, Math.ceil((expDate - today) / 86400000));
-            
-            // Add daysToExp to each option
-            const optionsWithDTE = chainData.options.map(opt => ({
-              ...opt,
-              daysToExp
-            }));
-            
-            allOptions.push(...optionsWithDTE);
-          }
-        }
-        
-        if (allOptions.length > 0) {
-          console.log('✅ Loaded', allOptions.length, 'real options from Tradier');
-          return allOptions;
-        }
-      }
-    } catch (error) {
-      console.log('⚠️ Tradier unavailable, using simulated options:', error.message);
-    }
-    
-    // Fallback: Generate simulated options chain
-    console.log('📊 Generating simulated options chain...');
-    const options = [];
-    const baseIV = vix / 100;
-    const today = new Date();
-    
-    for (let week = 0; week < 4; week++) {
-      const expDate = new Date(today);
-      const daysToFriday = (5 - today.getDay() + 7) % 7 || 7;
-      expDate.setDate(today.getDate() + daysToFriday + (week * 7));
-      const daysToExp = Math.max(1, Math.ceil((expDate - today) / 86400000));
-      const T = daysToExp / 365;
-      
-      for (let i = -25; i <= 25; i++) {
-        const strike = Math.round((spy + i * 2) * 2) / 2;
-        const moneyness = strike / spy;
-        const skewFactor = moneyness < 1 ? 1 + (1 - moneyness) * 0.8 : 1 - (moneyness - 1) * 0.2;
-        const iv = Math.max(0.08, baseIV * skewFactor * (0.95 + Math.random() * 0.1));
-        
-        const atmDist = Math.abs(strike - spy);
-        const liqFactor = Math.max(0.05, Math.exp(-atmDist / 15));
-        const timeFactor = 1 / Math.sqrt(week + 1);
-        const baseOI = 50000 * liqFactor * timeFactor;
-        
-        const callOI = Math.floor(baseOI * (0.8 + Math.random() * 0.4));
-        const putOI = Math.floor(baseOI * (1.1 + Math.random() * 0.5));
-        
-        const callGreeks = calculateGreeks(spy, strike, T, 0.045, iv, true);
-        const putGreeks = calculateGreeks(spy, strike, T, 0.045, iv, false);
-        
-        const callPrice = Math.max(0.01, spy - strike) + iv * spy * Math.sqrt(T) * 0.4;
-        const putPrice = Math.max(0.01, strike - spy) + iv * spy * Math.sqrt(T) * 0.4;
-        
-        options.push({
-          expiration: expDate.toISOString().split('T')[0],
-          daysToExp,
-          strike,
-          type: 'CALL',
-          iv,
-          oi: callOI,
-          volume: Math.floor(callOI * (0.1 + Math.random() * 0.25)),
-          bid: Math.max(0.01, callPrice * 0.98),
-          ask: callPrice * 1.02,
-          ...callGreeks
-        });
-        
-        options.push({
-          expiration: expDate.toISOString().split('T')[0],
-          daysToExp,
-          strike,
-          type: 'PUT',
-          iv: iv * 1.05,
-          oi: putOI,
-          volume: Math.floor(putOI * (0.12 + Math.random() * 0.25)),
-          bid: Math.max(0.01, putPrice * 0.98),
-          ask: putPrice * 1.02,
-          ...putGreeks
-        });
-      }
-    }
-    return options;
-  };
-
-  // Calculate IV skew curve
-  const calculateSkewCurve = (options, spy) => {
-    const firstExp = options.filter(o => o.daysToExp < 8);
-    const strikeIVMap = {};
-    
-    firstExp.forEach(opt => {
-      const key = opt.strike;
-      if (!strikeIVMap[key]) {
-        strikeIVMap[key] = { strike: key, callIV: 0, putIV: 0, calls: 0, puts: 0 };
-      }
-      if (opt.type === 'CALL') {
-        strikeIVMap[key].callIV += opt.iv;
-        strikeIVMap[key].calls++;
-      } else {
-        strikeIVMap[key].putIV += opt.iv;
-        strikeIVMap[key].puts++;
-      }
-    });
-    
-    return Object.values(strikeIVMap)
-      .map(s => ({
-        strike: s.strike,
-        moneyness: ((s.strike / spy - 1) * 100).toFixed(1),
-        callIV: s.calls > 0 ? (s.callIV / s.calls * 100).toFixed(2) : 0,
-        putIV: s.puts > 0 ? (s.putIV / s.puts * 100).toFixed(2) : 0,
-        avgIV: ((s.callIV / s.calls + s.putIV / s.puts) / 2 * 100).toFixed(2)
-      }))
-      .filter(s => Math.abs(s.strike - spy) < 30)
-      .sort((a, b) => a.strike - b.strike);
-  };
-
-  // Calculate dealer metrics
-  const calcDealerMetrics = (options, spy) => {
-    if (!options.length || !spy) return null;
-    
-    const strikeMap = {};
-    options.forEach(opt => {
-      if (!strikeMap[opt.strike]) {
-        strikeMap[opt.strike] = { 
-          strike: opt.strike, 
-          callGamma: 0, 
-          putGamma: 0, 
-          callDelta: 0,
-          putDelta: 0,
-          netGamma: 0,
-          netDelta: 0 
-        };
-      }
-      const notional = opt.oi * 100 * -1;
-      if (opt.type === 'CALL') {
-        strikeMap[opt.strike].callGamma += opt.gamma * notional;
-        strikeMap[opt.strike].callDelta += opt.delta * notional;
-      } else {
-        strikeMap[opt.strike].putGamma += opt.gamma * notional;
-        strikeMap[opt.strike].putDelta += opt.delta * notional;
-      }
-    });
-    
-    Object.values(strikeMap).forEach(s => {
-      s.netGamma = s.callGamma + s.putGamma;
-      s.netDelta = s.callDelta + s.putDelta;
-    });
-    
-    const strikes = Object.values(strikeMap).sort((a,b) => a.strike - b.strike);
-    const totalGamma = strikes.reduce((sum, s) => sum + s.netGamma, 0);
-    const totalDelta = strikes.reduce((sum, s) => sum + s.netDelta, 0);
-    
-    let gammaFlip = null;
-    for (let i = 0; i < strikes.length - 1; i++) {
-      if (strikes[i].netGamma * strikes[i+1].netGamma < 0) {
-        gammaFlip = (strikes[i].strike + strikes[i+1].strike) / 2;
-        break;
-      }
-    }
-    
-    return {
-      strikes,
-      totalGamma,
-      totalDelta,
-      gammaFlipPoint: gammaFlip,
-      isShortGamma: totalGamma < 0,
-      maxGammaStrike: strikes.reduce((max, s) => 
-        Math.abs(s.netGamma) > Math.abs(max.netGamma) ? s : max, strikes[0])
-    };
-  };
-
-  // Calculate volatility metrics
-  const calcVolMetrics = async (options, spy, vix) => {
-    if (!options.length) return null;
-    
-    const atmOpts = options.filter(o => Math.abs(o.strike - spy) < 5);
-    const atmIV = atmOpts.reduce((sum, o) => sum + o.iv, 0) / atmOpts.length;
-    
-    const calls = options.filter(o => o.type === 'CALL');
-    const puts = options.filter(o => o.type === 'PUT');
-    const pcrVol = puts.reduce((s,p) => s + p.volume, 0) / Math.max(1, calls.reduce((s,c) => s + c.volume, 0));
-    const pcrOI = puts.reduce((s,p) => s + p.oi, 0) / Math.max(1, calls.reduce((s,c) => s + c.oi, 0));
-    
-    const otmPuts = options.filter(o => o.type === 'PUT' && o.strike < spy * 0.95);
-    const otmCalls = options.filter(o => o.type === 'CALL' && o.strike > spy * 1.05);
-    const putIV = otmPuts.length > 0 ? otmPuts.reduce((s,o) => s + o.iv, 0) / otmPuts.length : atmIV;
-    const callIV = otmCalls.length > 0 ? otmCalls.reduce((s,o) => s + o.iv, 0) / otmCalls.length : atmIV;
-    const ivSkew = putIV - callIV;
-    
-    const hv = 0.15;
-    
-    return {
-      atmIV,
-      historicalVol: hv,
-      ivHVSpread: atmIV - hv,
-      pcrVolume: pcrVol,
-      pcrOI,
-      ivSkew,
-      vixLevel: vix
-    };
-  };
-
-  // Generate prediction
-  const genPrediction = (volMetrics, dealerMet, spy, skew) => {
-    if (!volMetrics || !dealerMet) return null;
-    
-    let bull = 0, bear = 0;
-    const signals = [];
-    
-    if (dealerMet.isShortGamma) {
-      if (spy > dealerMet.gammaFlipPoint) {
-        bull += 2;
-        signals.push({ factor: 'Dealer Short Gamma Above Flip', sentiment: 'bullish', weight: 2 });
-      } else {
-        bear += 2;
-        signals.push({ factor: 'Dealer Short Gamma Below Flip', sentiment: 'bearish', weight: 2 });
-      }
-    } else {
-      bear += 1;
-      signals.push({ factor: 'Dealer Long Gamma (Dampening)', sentiment: 'bearish', weight: 1 });
-    }
-    
-    if (volMetrics.pcrVolume > 1.2) {
-      bull += 1;
-      signals.push({ factor: 'High Put Buying (PCR > 1.2)', sentiment: 'bullish', weight: 1 });
-    } else if (volMetrics.pcrVolume < 0.7) {
-      bear += 1;
-      signals.push({ factor: 'High Call Buying (PCR < 0.7)', sentiment: 'bearish', weight: 1 });
-    }
-    
-    if (volMetrics.ivHVSpread > 0.05) {
-      bear += 1;
-      signals.push({ factor: 'IV Premium to HV (Fear)', sentiment: 'bearish', weight: 1 });
-    } else if (volMetrics.ivHVSpread < -0.02) {
-      bull += 1;
-      signals.push({ factor: 'IV Discount to HV', sentiment: 'bullish', weight: 1 });
-    }
-    
-    if (volMetrics.vixLevel > 25) {
-      bull += 2;
-      signals.push({ factor: 'Elevated VIX (>25)', sentiment: 'bullish', weight: 2 });
-    } else if (volMetrics.vixLevel < 12) {
-      bear += 1;
-      signals.push({ factor: 'Low VIX (<12)', sentiment: 'bearish', weight: 1 });
-    }
-    
-    if (volMetrics.ivSkew > 0.05) {
-      bear += 1;
-      signals.push({ factor: 'High Put Skew (>5%)', sentiment: 'bearish', weight: 1 });
-    }
-    
-    if (skew > 140) {
-      bear += 2;
-      signals.push({ factor: 'Elevated SKEW (>140)', sentiment: 'bearish', weight: 2 });
-    } else if (skew < 120) {
-      bull += 1;
-      signals.push({ factor: 'Low SKEW (<120)', sentiment: 'bullish', weight: 1 });
-    }
-    
-    return {
-      prediction: bull > bear ? 'BULLISH' : 'BEARISH',
-      confidence: Math.abs(bull - bear) / (bull + bear),
-      signals,
-      bullishScore: bull,
-      bearishScore: bear,
-      timestamp: new Date().toISOString(),
-      spyPriceAtPrediction: spy
-    };
-  };
-
-  // Initialize - fetch real data on mount
-  useEffect(() => {
-    fetchMarketData();
-    const interval = setInterval(fetchMarketData, 300000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Generate options data when prices are available
-  useEffect(() => {
-    const loadData = async () => {
-      if (spyPrice && vixPrice && skewValue) {
-        console.log('📊 Generating dashboard data...');
-        
-        const opts = await generateOptions(spyPrice, vixPrice);
-        setOptionsData(opts);
-        
-        const vol = await calcVolMetrics(opts, spyPrice, vixPrice);
-        setVolatilityMetrics(vol);
-        
-        const dealer = calcDealerMetrics(opts, spyPrice);
-        setDealerMetrics(dealer);
-        
-        const pred = genPrediction(vol, dealer, spyPrice, skewValue);
-        if (!currentPrediction) {
-          setCurrentPrediction(pred);
-        }
-        
-        // Await the async historical data fetch
-        const hist = await generateHistoricalData(spyPrice, vixPrice, skewValue);
-        setHistoricalData(hist);
-        
-        console.log('✅ Dashboard data generation complete');
-      }
-    };
-    
-    loadData();
-  }, [spyPrice, vixPrice, skewValue]);
-
-  const logResult = (move) => {
-    if (!currentPrediction) return;
-    const result = {
-      ...currentPrediction,
-      actualMove: move,
-      correct: (currentPrediction.prediction === 'BULLISH' && move === 'UP') || 
-               (currentPrediction.prediction === 'BEARISH' && move === 'DOWN'),
-      spyPriceAtClose: spyPrice
-    };
-    setPredictions(prev => [...prev, result]);
-    const newPred = genPrediction(volatilityMetrics, dealerMetrics, spyPrice, skewValue);
-    setCurrentPrediction(newPred);
-  };
-
-  const exportPreds = () => {
-    const blob = new Blob([JSON.stringify(predictions, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `spy-predictions-${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
-  };
-
-  const importPreds = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        try {
-          setPredictions(JSON.parse(ev.target.result));
-        } catch (err) {
-          alert('Invalid JSON file');
-        }
-      };
-      reader.readAsText(file);
-    }
-  };
+  // ============================================================================
+  // RENDER
+  // ============================================================================
 
   const tabs = [
-    { id: 'overview', label: 'Overview', icon: Activity },
-    { id: 'volatility', label: 'Volatility Analysis', icon: TrendingUp },
-    { id: 'options', label: 'Options Chain', icon: Database },
-    { id: 'dealer', label: 'Dealer Positioning', icon: Target },
-    { id: 'predictions', label: 'Predictions', icon: BarChart3 },
-    { id: 'structure', label: 'Market Structure', icon: Layers }
+    { id: 'structure', label: 'Market Structure', icon: Layers },
+    { id: 'momentum', label: 'Momentum', icon: Activity },
+    { id: 'walls', label: 'Options Walls', icon: Target },
+    { id: 'volume', label: 'Volume Profile', icon: BarChart3 },
+    { id: 'correlation', label: 'Correlation', icon: Zap }
   ];
 
-  const skewCurve = optionsData.length > 0 && spyPrice ? calculateSkewCurve(optionsData, spyPrice) : [];
-
-  // Loading state
-  if (loading || !spyPrice || !vixPrice || !skewValue || !optionsData.length) {
+  // Show loading state if data is still processing
+  if (processedData.length === 0) {
     return (
-      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-500 mx-auto mb-6"></div>
-          <p className="text-2xl font-bold mb-2">Loading Market Data...</p>
-          <p className="text-sm text-gray-400">Fetching SPY, VIX, and SKEW via Vercel proxies</p>
-          <div className="mt-4 space-y-1 text-xs text-gray-500">
-            <p>{apiStatus.spy ? '✅ SPY loaded' : '⏳ Loading SPY...'}</p>
-            <p>{apiStatus.vix ? '✅ VIX loaded' : '⏳ Loading VIX...'}</p>
-            <p>{apiStatus.skew ? '✅ SKEW loaded' : '⏳ Loading SKEW...'}</p>
-            <p className="text-xs text-gray-600 mt-2">Serverless: Polygon + Yahoo + CBOE</p>
+      <div className="w-full min-h-screen bg-gray-900 text-white p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="mb-6">
+            <h1 className="text-3xl font-bold mb-2">Market Structure Analysis</h1>
+            <p className="text-gray-400">
+              Advanced technical analysis, support/resistance, and options positioning
+            </p>
+          </div>
+          <div className="bg-gray-800 rounded-lg p-12 text-center">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-500 mx-auto mb-6"></div>
+            <p className="text-xl font-bold mb-2">Loading Market Data...</p>
+            <p className="text-gray-400">Calculating technical indicators and market structure</p>
           </div>
         </div>
       </div>
@@ -836,47 +761,94 @@ const SPYDashboard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-6">
+    <div className="w-full min-h-screen bg-gray-900 text-white p-6">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-3xl font-bold mb-2">SPY Options Intelligence Dashboard</h1>
-          <div className="flex items-center gap-4 text-sm text-gray-400">
-            <span>Updated: {lastUpdate?.toLocaleTimeString()}</span>
-            <span>SPY: <span className="text-green-400 font-bold">${spyPrice.toFixed(2)}</span></span>
-            <span>VIX: <span className="text-orange-400 font-bold">{vixPrice.toFixed(2)}</span></span>
-            <span>SKEW: <span className="text-yellow-400 font-bold">{skewValue.toFixed(2)}</span></span>
-            <span className="text-green-500">● LIVE</span>
-          </div>
-          <div className="flex items-center gap-3 text-xs text-gray-500 mt-2">
-            <span>📊 Serverless Proxies: Polygon + Yahoo + CBOE</span>
-            <span>|</span>
-            <span className={apiStatus.spy ? 'text-green-500' : 'text-red-500'}>
-              {apiStatus.spy ? '✓' : '✗'} SPY
-            </span>
-            <span className={apiStatus.vix ? 'text-green-500' : 'text-red-500'}>
-              {apiStatus.vix ? '✓' : '✗'} VIX
-            </span>
-            <span className={apiStatus.skew ? 'text-green-500' : 'text-red-500'}>
-              {apiStatus.skew ? '✓' : '✗'} SKEW
-            </span>
-            <span>|</span>
-            <span>⟳ Updates every 5min</span>
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-3xl font-bold mb-2">Market Structure Analysis</h1>
+              <p className="text-gray-400">
+                Advanced technical analysis, support/resistance, and options positioning
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-sm text-gray-500">
+                Data Points: {processedData.length}
+              </p>
+              {processedData.length < 30 && (
+                <p className="text-xs text-yellow-500">
+                  ⚠ Limited data ({processedData.length} days). More history recommended for accuracy.
+                </p>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-2 mb-6 border-b border-gray-700 overflow-x-auto">
+        {/* Current Momentum Summary */}
+        {currentMomentum && (
+          <div className="bg-gray-800 rounded-lg p-6 mb-6">
+            <div className="grid grid-cols-5 gap-4">
+              <div>
+                <p className="text-sm text-gray-400 mb-1">Signal</p>
+                <div className={
+                  currentMomentum.signal === 'BULLISH' ? 'inline-flex items-center px-3 py-1 rounded text-sm font-semibold bg-green-600/20 text-green-400' :
+                  currentMomentum.signal === 'BEARISH' ? 'inline-flex items-center px-3 py-1 rounded text-sm font-semibold bg-red-600/20 text-red-400' :
+                  'inline-flex items-center px-3 py-1 rounded text-sm font-semibold bg-gray-600/20 text-gray-400'
+                }>
+                  {currentMomentum.signal === 'BULLISH' && <TrendingUp size={16} className="mr-1" />}
+                  {currentMomentum.signal === 'BEARISH' && <TrendingDown size={16} className="mr-1" />}
+                  {currentMomentum.signal}
+                </div>
+              </div>
+              <div>
+                <p className="text-sm text-gray-400 mb-1">RSI</p>
+                <p className={
+                  currentMomentum.rsi > 70 ? 'text-xl font-bold text-red-400' :
+                  currentMomentum.rsi < 30 ? 'text-xl font-bold text-green-400' :
+                  'text-xl font-bold text-white'
+                }>
+                  {currentMomentum.rsi.toFixed(1)}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-400 mb-1">Trend</p>
+                <p className="text-xl font-bold capitalize">{currentMomentum.trend}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-400 mb-1">MACD</p>
+                <p className={
+                  currentMomentum.macd > 0 ? 'text-xl font-bold text-green-400' : 'text-xl font-bold text-red-400'
+                }>
+                  {currentMomentum.macd.toFixed(2)}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-400 mb-1">Stochastic</p>
+                <p className={
+                  currentMomentum.stochastic > 80 ? 'text-xl font-bold text-red-400' :
+                  currentMomentum.stochastic < 20 ? 'text-xl font-bold text-green-400' :
+                  'text-xl font-bold text-white'
+                }>
+                  {currentMomentum.stochastic.toFixed(1)}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Tab Navigation */}
+        <div className="flex gap-2 mb-6 overflow-x-auto">
           {tabs.map(tab => {
             const Icon = tab.icon;
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => setActiveSection(tab.id)}
                 className={
-                  activeTab === tab.id
-                    ? 'flex items-center gap-2 px-4 py-2 transition-colors whitespace-nowrap bg-blue-600 text-white border-b-2 border-blue-400'
-                    : 'flex items-center gap-2 px-4 py-2 transition-colors whitespace-nowrap text-gray-400 hover:text-white'
+                  activeSection === tab.id
+                    ? 'flex items-center gap-2 px-4 py-2 rounded transition-colors whitespace-nowrap bg-blue-600 text-white'
+                    : 'flex items-center gap-2 px-4 py-2 rounded transition-colors whitespace-nowrap bg-gray-800 text-gray-400 hover:bg-gray-700'
                 }
               >
                 <Icon size={18} />
@@ -886,1074 +858,744 @@ const SPYDashboard = () => {
           })}
         </div>
 
-        {/* Overview Tab */}
-        {activeTab === 'overview' && (
-          <div className="space-y-6">
-            {currentPrediction && (
-              <div className={
-                currentPrediction.prediction === 'BULLISH' 
-                  ? 'p-6 rounded-lg bg-green-900/30 border border-green-600' 
-                  : 'p-6 rounded-lg bg-red-900/30 border border-red-600'
-              }>
+        {/* Content Sections */}
+        <div className="space-y-6">
+          {/* Market Structure Tab */}
+          {activeSection === 'structure' && (
+            <div className="space-y-6">
+              {/* Support/Resistance Chart */}
+              <div className="bg-gray-800 rounded-lg p-6">
                 <div className="flex justify-between items-center mb-4">
-                  <div className="flex items-center gap-3">
-                    {currentPrediction.prediction === 'BULLISH' ? (
-                      <TrendingUp size={32} className="text-green-400" />
-                    ) : (
-                      <TrendingDown size={32} className="text-red-400" />
+                  <h2 className="text-xl font-semibold">Price Action & Key Levels</h2>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={showAnnotations}
+                      onChange={(e) => setShowAnnotations(e.target.checked)}
+                      className="rounded"
+                    />
+                    Show Annotations
+                  </label>
+                </div>
+                <ResponsiveContainer width="100%" height={400}>
+                  <ComposedChart data={processedData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis 
+                      dataKey="date" 
+                      stroke="#9CA3AF"
+                      tick={{ fontSize: 12 }}
+                    />
+                    <YAxis 
+                      stroke="#9CA3AF"
+                      domain={['dataMin - 5', 'dataMax + 5']}
+                    />
+                    <Tooltip
+                      contentStyle={{ 
+                        backgroundColor: '#1F2937', 
+                        border: '1px solid #374151',
+                        borderRadius: '0.5rem'
+                      }}
+                    />
+                    <Legend />
+                    
+                    {/* Support/Resistance Lines */}
+                    {showAnnotations && srLevels.map((level, idx) => (
+                      <ReferenceLine
+                        key={`sr-${idx}`}
+                        y={level.price}
+                        stroke={level.type === 'resistance' ? '#EF4444' : '#10B981'}
+                        strokeDasharray="5 5"
+                        strokeWidth={2}
+                        label={{
+                          value: `${level.type.toUpperCase()} $${level.price.toFixed(2)}`,
+                          fill: level.type === 'resistance' ? '#EF4444' : '#10B981',
+                          fontSize: 11,
+                          position: 'right'
+                        }}
+                      />
+                    ))}
+
+                    {/* POC Line */}
+                    {showAnnotations && volumeProfile.poc && (
+                      <ReferenceLine
+                        y={volumeProfile.poc.priceLevel}
+                        stroke="#F59E0B"
+                        strokeWidth={2}
+                        label={{
+                          value: `POC $${volumeProfile.poc.priceLevel.toFixed(2)}`,
+                          fill: '#F59E0B',
+                          fontSize: 11,
+                          position: 'right'
+                        }}
+                      />
                     )}
-                    <div>
-                      <h2 className="text-2xl font-bold">{currentPrediction.prediction}</h2>
-                      <p className="text-sm text-gray-400">
-                        Confidence: {(currentPrediction.confidence * 100).toFixed(0)}% | 
-                        Score: {currentPrediction.bullishScore} Bull / {currentPrediction.bearishScore} Bear
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => logResult('UP')}
-                      className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded transition-colors"
-                    >
-                      Log UP
-                    </button>
-                    <button
-                      onClick={() => logResult('DOWN')}
-                      className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded transition-colors"
-                    >
-                      Log DOWN
-                    </button>
+
+                    <Area
+                      type="monotone"
+                      dataKey="sma20"
+                      stroke="#3B82F6"
+                      fill="none"
+                      strokeWidth={1.5}
+                      name="SMA 20"
+                      dot={false}
+                      connectNulls={true}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="close"
+                      stroke="#FFFFFF"
+                      strokeWidth={2}
+                      name="Price"
+                      dot={false}
+                    />
+                    
+                    {/* Swing Highs */}
+                    {showAnnotations && swingAnalysis.highs.map((high, idx) => (
+                      <ReferenceLine
+                        key={`high-${idx}`}
+                        segment={[
+                          { x: processedData[high.index]?.date, y: high.price - 2 },
+                          { x: processedData[high.index]?.date, y: high.price + 0.5 }
+                        ]}
+                        stroke="#EF4444"
+                        strokeWidth={2}
+                      />
+                    ))}
+
+                    {/* Swing Lows */}
+                    {showAnnotations && swingAnalysis.lows.map((low, idx) => (
+                      <ReferenceLine
+                        key={`low-${idx}`}
+                        segment={[
+                          { x: processedData[low.index]?.date, y: low.price + 2 },
+                          { x: processedData[low.index]?.date, y: low.price - 0.5 }
+                        ]}
+                        stroke="#10B981"
+                        strokeWidth={2}
+                      />
+                    ))}
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Key Levels Table */}
+              <div className="grid grid-cols-2 gap-6">
+                <div className="bg-gray-800 rounded-lg p-6">
+                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <Target size={20} className="text-red-400" />
+                    Resistance Levels
+                  </h3>
+                  <div className="space-y-2">
+                    {srLevels
+                      .filter(l => l.type === 'resistance' && l.price > (currentPrice || 595))
+                      .slice(0, 5)
+                      .map((level, idx) => (
+                        <div key={idx} className="flex justify-between items-center p-3 bg-gray-700/50 rounded">
+                          <div>
+                            <p className="font-semibold">${level.price.toFixed(2)}</p>
+                            <p className="text-xs text-gray-400">{level.touches} touches</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm text-red-400">+{level.distance.toFixed(2)}%</p>
+                            <div className="w-20 h-2 bg-gray-600 rounded-full mt-1">
+                              <div
+                                className="h-full bg-red-500 rounded-full"
+                                style={{ width: `${Math.min(level.strength * 10, 100)}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                   </div>
                 </div>
-                
+
+                <div className="bg-gray-800 rounded-lg p-6">
+                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <Target size={20} className="text-green-400" />
+                    Support Levels
+                  </h3>
+                  <div className="space-y-2">
+                    {srLevels
+                      .filter(l => l.type === 'support' && l.price < (currentPrice || 595))
+                      .slice(0, 5)
+                      .map((level, idx) => (
+                        <div key={idx} className="flex justify-between items-center p-3 bg-gray-700/50 rounded">
+                          <div>
+                            <p className="font-semibold">${level.price.toFixed(2)}</p>
+                            <p className="text-xs text-gray-400">{level.touches} touches</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm text-green-400">-{level.distance.toFixed(2)}%</p>
+                            <div className="w-20 h-2 bg-gray-600 rounded-full mt-1">
+                              <div
+                                className="h-full bg-green-500 rounded-full"
+                                style={{ width: `${Math.min(level.strength * 10, 100)}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Break of Structure */}
+              <div className="bg-gray-800 rounded-lg p-6">
+                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                  <AlertTriangle size={20} className="text-yellow-400" />
+                  Recent Break of Structure Events
+                </h3>
                 <div className="space-y-2">
-                  <h3 className="font-semibold mb-2">Contributing Signals:</h3>
-                  {currentPrediction.signals.map((signal, idx) => (
-                    <div key={idx} className="flex items-center justify-between text-sm">
-                      <span>{signal.factor}</span>
-                      <span className={
-                        signal.sentiment === 'bullish' ? 'px-2 py-1 rounded bg-green-600/50' : 'px-2 py-1 rounded bg-red-600/50'
-                      }>
-                        {signal.sentiment.toUpperCase()} (W:{signal.weight})
-                      </span>
+                  {bosAnalysis.bos.slice(-5).reverse().map((bos, idx) => (
+                    <div 
+                      key={idx} 
+                      className={
+                        bos.type === 'bullish' ? 'p-3 rounded bg-green-600/20' : 'p-3 rounded bg-red-600/20'
+                      }
+                    >
+                      <div className="flex justify-between items-center">
+                        <div className="flex items-center gap-2">
+                          {bos.type === 'bullish' ? (
+                            <TrendingUp className="text-green-400" size={20} />
+                          ) : (
+                            <TrendingDown className="text-red-400" size={20} />
+                          )}
+                          <div>
+                            <p className="font-semibold capitalize">{bos.type} BOS</p>
+                            <p className="text-xs text-gray-400">
+                              {processedData[bos.index]?.date || 'Recent'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold">${bos.price.toFixed(2)}</p>
+                          <p className="text-xs text-gray-400">
+                            Broke ${bos.level.toFixed(2)} ({bos.strength.toFixed(2)}%)
+                          </p>
+                        </div>
+                      </div>
                     </div>
                   ))}
+                  {bosAnalysis.bos.length === 0 && (
+                    <p className="text-gray-400 text-center py-4">No recent breaks detected</p>
+                  )}
                 </div>
               </div>
-            )}
+            </div>
+          )}
 
-            {/* Key Metrics Grid */}
-            <div className="grid grid-cols-3 gap-4">
-              <div className="bg-gray-800 p-4 rounded-lg">
-                <h3 className="text-sm text-gray-400 mb-2">ATM IV</h3>
-                <p className="text-2xl font-bold">
-                  {volatilityMetrics ? (volatilityMetrics.atmIV * 100).toFixed(2) : '--'}%
+          {/* Momentum Tab */}
+          {activeSection === 'momentum' && (
+            <div className="space-y-6">
+              <div className="text-white">
+              {/* RSI Chart */}
+              <div className="bg-gray-800 rounded-lg p-6">
+                <h2 className="text-xl font-semibold mb-4">RSI (Relative Strength Index)</h2>
+                <ResponsiveContainer width="100%" height={250}>
+                  <ComposedChart data={processedData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis dataKey="date" stroke="#9CA3AF" tick={{ fontSize: 12 }} />
+                    <YAxis domain={[0, 100]} stroke="#9CA3AF" />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
+                    />
+                    <ReferenceLine y={70} stroke="#EF4444" strokeDasharray="3 3" label="Overbought" />
+                    <ReferenceLine y={30} stroke="#10B981" strokeDasharray="3 3" label="Oversold" />
+                    <ReferenceLine y={50} stroke="#6B7280" strokeDasharray="3 3" />
+                    <Area
+                      type="monotone"
+                      dataKey="rsi"
+                      stroke="#3B82F6"
+                      fill="#3B82F6"
+                      fillOpacity={0.3}
+                      name="RSI"
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+                <p className="text-xs text-gray-400 mt-2">
+                  RSI &gt; 70 = overbought (potential reversal). RSI &lt; 30 = oversold (potential bounce).
                 </p>
               </div>
-              <div className="bg-gray-800 p-4 rounded-lg">
-                <h3 className="text-sm text-gray-400 mb-2">PCR (Volume)</h3>
-                <p className="text-2xl font-bold">
-                  {volatilityMetrics?.pcrVolume.toFixed(2) || '--'}
-                </p>
-              </div>
-              <div className="bg-gray-800 p-4 rounded-lg">
-                <h3 className="text-sm text-gray-400 mb-2">IV Skew</h3>
-                <p className="text-2xl font-bold">
-                  {volatilityMetrics ? (volatilityMetrics.ivSkew * 100).toFixed(2) : '--'}%
-                </p>
-              </div>
-              <div className="bg-gray-800 p-4 rounded-lg">
-                <h3 className="text-sm text-gray-400 mb-2">Dealer Gamma</h3>
-                <p className={
-                  dealerMetrics?.isShortGamma ? 'text-2xl font-bold text-red-400' : 'text-2xl font-bold text-green-400'
-                }>
-                  {dealerMetrics ? (dealerMetrics.isShortGamma ? 'SHORT' : 'LONG') : '--'}
-                </p>
-              </div>
-              <div className="bg-gray-800 p-4 rounded-lg">
-                <h3 className="text-sm text-gray-400 mb-2">Gamma Flip</h3>
-                <p className="text-2xl font-bold">
-                  {dealerMetrics?.gammaFlipPoint ? `$${dealerMetrics.gammaFlipPoint.toFixed(2)}` : 'N/A'}
-                </p>
-                {!dealerMetrics?.gammaFlipPoint && (
-                  <p className="text-xs text-gray-500 mt-1">No crossover detected</p>
-                )}
-              </div>
-              <div className="bg-gray-800 p-4 rounded-lg">
-                <h3 className="text-sm text-gray-400 mb-2">IV-HV Spread</h3>
-                <p className="text-2xl font-bold">
-                  {volatilityMetrics ? (volatilityMetrics.ivHVSpread * 100).toFixed(2) : '--'}%
-                </p>
-              </div>
-            </div>
 
-            {/* SPY vs VIX Historical Chart */}
-            <div className="bg-gray-800 p-6 rounded-lg">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center">
-                  <h3 className="text-lg font-semibold">SPY vs VIX (30 Days)</h3>
-                  <InfoTooltip text="SPY and VIX typically move inversely. When SPY rallies, VIX falls (low fear). When SPY drops, VIX spikes (high fear). Divergences can signal regime changes." />
-                </div>
-                <div className="flex gap-4 text-sm items-center">
-                  <div>
-                    <span className="text-gray-400">SPY: </span>
-                    <span className={`font-bold ${historicalData[historicalData.length - 1]?.spyPctChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      ${historicalData[historicalData.length - 1]?.spy.toFixed(2)}
-                      {' '}
-                      ({historicalData[historicalData.length - 1]?.spyPctChange >= 0 ? '+' : ''}
-                      {historicalData[historicalData.length - 1]?.spyPctChange.toFixed(2)}%)
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-gray-400">VIX: </span>
-                    <span className="font-bold text-orange-400">{vixPrice.toFixed(2)}</span>
-                  </div>
-                </div>
-              </div>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={historicalData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="date" stroke="#9CA3AF" />
-                  <YAxis 
-                    yAxisId="left" 
-                    stroke="#10B981"
-                    domain={['dataMin - 10', 'dataMax + 10']}
-                    label={{ value: 'SPY Price ($)', angle: -90, position: 'insideLeft', fill: '#10B981' }}
-                  />
-                  <YAxis 
-                    yAxisId="right" 
-                    orientation="right" 
-                    stroke="#F59E0B"
-                    domain={[10, 35]}
-                    label={{ value: 'VIX Level', angle: 90, position: 'insideRight', fill: '#F59E0B' }}
-                  />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
-                    formatter={(value, name) => {
-                      if (name === 'SPY Price') return `$${value.toFixed(2)}`;
-                      return value.toFixed(2);
-                    }}
-                  />
-                  <Legend />
-                  <Line 
-                    yAxisId="left"
-                    type="monotone" 
-                    dataKey="spy" 
-                    stroke="#10B981" 
-                    name="SPY Price"
-                    strokeWidth={3}
-                    dot={false}
-                  />
-                  <Line 
-                    yAxisId="right"
-                    type="monotone" 
-                    dataKey="vix" 
-                    stroke="#F59E0B" 
-                    name="VIX"
-                    strokeWidth={3}
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-              <div className="mt-4 p-4 bg-gray-900/50 rounded">
-                <p className="text-xs text-gray-400 mb-2">
-                  <strong className="text-white">How to read this:</strong> Green line shows actual SPY price over 30 days. Orange line shows VIX level.
-                </p>
-                <p className="text-xs text-gray-400">
-                  <strong className="text-white">Normal market:</strong> When SPY rises (green up), VIX falls (orange down). 
-                  <strong className="text-yellow-400 ml-2">⚠️ Warning sign:</strong> Both rising or both falling = regime shift incoming.
-                </p>
-              </div>
-            </div>
-
-            {/* Daily Performance Summary */}
-            <div className="bg-gray-800 p-6 rounded-lg">
-              <h3 className="text-lg font-semibold mb-4">Today's Performance vs Historical</h3>
-              <div className="grid grid-cols-4 gap-4">
-                <div className="p-4 bg-gray-900/50 rounded">
-                  <p className="text-xs text-gray-400 mb-1">Current SPY</p>
-                  <p className="text-2xl font-bold text-green-400">${spyPrice.toFixed(2)}</p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {historicalData.length > 0 && (
-                      <>30d: ${historicalData[0].spy.toFixed(2)}</>
-                    )}
-                  </p>
-                </div>
-                <div className="p-4 bg-gray-900/50 rounded">
-                  <p className="text-xs text-gray-400 mb-1">30-Day Return</p>
-                  <p className={`text-2xl font-bold ${historicalData[historicalData.length - 1]?.spyPctChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {historicalData[historicalData.length - 1]?.spyPctChange >= 0 ? '+' : ''}
-                    {historicalData[historicalData.length - 1]?.spyPctChange.toFixed(2)}%
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    ${((historicalData[historicalData.length - 1]?.spyPctChange / 100) * spyPrice).toFixed(2)} move
-                  </p>
-                </div>
-                <div className="p-4 bg-gray-900/50 rounded">
-                  <p className="text-xs text-gray-400 mb-1">VIX Range (30d)</p>
-                  <p className="text-2xl font-bold text-orange-400">
-                    {Math.min(...historicalData.map(d => d.vix)).toFixed(1)} - {Math.max(...historicalData.map(d => d.vix)).toFixed(1)}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">Current: {vixPrice.toFixed(2)}</p>
-                </div>
-                <div className="p-4 bg-gray-900/50 rounded">
-                  <p className="text-xs text-gray-400 mb-1">Volatility Regime</p>
-                  <p className="text-2xl font-bold text-blue-400">
-                    {vixPrice < 13 ? 'LOW' : vixPrice < 20 ? 'NORMAL' : vixPrice < 30 ? 'ELEVATED' : 'HIGH'}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {vixPrice < 13 ? 'Grind higher' : vixPrice < 20 ? 'Trending' : vixPrice < 30 ? 'Choppy' : 'Crisis mode'}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* PCR vs SPY */}
-            <div className="bg-gray-800 p-6 rounded-lg">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center">
-                  <h3 className="text-lg font-semibold">Put/Call Ratio Analysis</h3>
-                  <InfoTooltip text="PCR > 1.2 = Heavy put buying (contrarian bullish). PCR < 0.7 = Heavy call buying (contrarian bearish). Extreme readings often precede reversals." />
-                </div>
-                <div className="text-sm">
-                  <span className="text-gray-400">Current PCR: </span>
-                  <span className={
-                    volatilityMetrics?.pcrVolume > 1.2 ? 'font-bold text-green-400' : 
-                    volatilityMetrics?.pcrVolume < 0.7 ? 'font-bold text-red-400' : 
-                    'font-bold text-blue-400'
-                  }>
-                    {volatilityMetrics?.pcrVolume.toFixed(3)}
-                  </span>
-                </div>
-              </div>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={historicalData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="date" stroke="#9CA3AF" />
-                  <YAxis 
-                    yAxisId="left" 
-                    stroke="#10B981"
-                    domain={['dataMin - 2', 'dataMax + 2']}
-                    label={{ value: 'SPY % Change', angle: -90, position: 'insideLeft', fill: '#10B981' }}
-                  />
-                  <YAxis 
-                    yAxisId="right" 
-                    orientation="right" 
-                    stroke="#8B5CF6"
-                    domain={[0.5, 1.5]}
-                    label={{ value: 'Put/Call Ratio', angle: 90, position: 'insideRight', fill: '#8B5CF6' }}
-                  />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
-                    formatter={(value, name) => {
-                      if (name === 'SPY % Change') return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
-                      if (name === 'PCR') return value.toFixed(3);
-                      return value;
-                    }}
-                  />
-                  <Legend />
-                  <defs>
-                    <linearGradient id="pcrGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#10B981" stopOpacity={0.1}/>
-                      <stop offset="40%" stopColor="#3B82F6" stopOpacity={0.1}/>
-                      <stop offset="100%" stopColor="#EF4444" stopOpacity={0.1}/>
-                    </linearGradient>
-                  </defs>
-                  <Area
-                    yAxisId="right"
-                    type="monotone"
-                    dataKey="pcr"
-                    stroke="none"
-                    fill="url(#pcrGradient)"
-                  />
-                  <Line 
-                    yAxisId="left"
-                    type="monotone" 
-                    dataKey="spyPctChange" 
-                    stroke="#10B981" 
-                    name="SPY % Change"
-                    strokeWidth={3}
-                    dot={false}
-                  />
-                  <Line 
-                    yAxisId="right"
-                    type="monotone" 
-                    dataKey="pcr" 
-                    stroke="#8B5CF6" 
-                    name="PCR"
-                    strokeWidth={3}
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-              <div className="mt-4 grid grid-cols-3 gap-4 text-xs">
-                <div className="p-2 bg-green-900/20 border border-green-600/30 rounded">
-                  <p className="text-green-400 font-semibold">PCR &gt; 1.2 (Bullish Zone)</p>
-                  <p className="text-gray-400 mt-1">Heavy put buying = fear = contrarian buy signal</p>
-                </div>
-                <div className="p-2 bg-blue-900/20 border border-blue-600/30 rounded">
-                  <p className="text-blue-400 font-semibold">PCR 0.7-1.2 (Neutral)</p>
-                  <p className="text-gray-400 mt-1">Balanced options flow = no extreme positioning</p>
-                </div>
-                <div className="p-2 bg-red-900/20 border border-red-600/30 rounded">
-                  <p className="text-red-400 font-semibold">PCR &lt; 0.7 (Bearish Zone)</p>
-                  <p className="text-gray-400 mt-1">Heavy call buying = euphoria = contrarian sell signal</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Volatility Tab */}
-        {activeTab === 'volatility' && volatilityMetrics && (
-          <div className="space-y-6">
-            {/* IV Skew Curve */}
-            <div className="bg-gray-800 p-6 rounded-lg">
-              <div className="flex items-center mb-4">
-                <h3 className="text-lg font-semibold">IV Skew Curve (Front Week)</h3>
-                <InfoTooltip text="Skew shows how IV changes across strikes. Steep skew = high demand for OTM puts (tail hedging). Flat skew = complacency. The 'smile' shape is characteristic of equity options." />
-              </div>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={skewCurve}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis 
-                    dataKey="moneyness" 
-                    stroke="#9CA3AF" 
-                    label={{ value: 'Moneyness (%)', position: 'insideBottom', offset: -5 }}
-                  />
-                  <YAxis 
-                    stroke="#9CA3AF"
-                    label={{ value: 'Implied Volatility (%)', angle: -90, position: 'insideLeft' }}
-                  />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
-                  />
-                  <Legend />
-                  <Line 
-                    type="monotone" 
-                    dataKey="putIV" 
-                    stroke="#EF4444" 
-                    name="Put IV"
-                    strokeWidth={2}
-                    dot={{ r: 3 }}
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="callIV" 
-                    stroke="#10B981" 
-                    name="Call IV"
-                    strokeWidth={2}
-                    dot={{ r: 3 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-              <p className="text-xs text-gray-500 mt-2">
-                <strong>Interpretation:</strong> Put IV (red) higher than call IV (green) = normal. Steep slope to the left = elevated tail risk hedging. Flattening curve = complacency building.
-              </p>
-            </div>
-
-            {/* IV vs HV */}
-            <div className="grid grid-cols-2 gap-6">
-              <div className="bg-gray-800 p-6 rounded-lg">
-                <div className="flex items-center mb-4">
-                  <h3 className="text-lg font-semibold">IV vs HV</h3>
-                  <InfoTooltip text="IV > HV means options are expensive (fear premium). IV < HV means options are cheap (complacency). Trade the spread!" />
-                </div>
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex justify-between mb-2">
-                      <span className="text-gray-400">ATM IV</span>
-                      <span className="font-bold">{(volatilityMetrics.atmIV * 100).toFixed(2)}%</span>
-                    </div>
-                    <div className="w-full bg-gray-700 rounded-full h-2">
-                      <div 
-                        className="bg-blue-500 h-2 rounded-full" 
-                        style={{ width: `${Math.min(100, volatilityMetrics.atmIV * 100 * 2)}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex justify-between mb-2">
-                      <span className="text-gray-400">20-Day HV</span>
-                      <span className="font-bold">{(volatilityMetrics.historicalVol * 100).toFixed(2)}%</span>
-                    </div>
-                    <div className="w-full bg-gray-700 rounded-full h-2">
-                      <div 
-                        className="bg-purple-500 h-2 rounded-full" 
-                        style={{ width: `${Math.min(100, volatilityMetrics.historicalVol * 100 * 2)}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                  <div className="pt-4 border-t border-gray-700">
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">IV-HV Spread</span>
-                      <span className={
-                        volatilityMetrics.ivHVSpread > 0 ? 'font-bold text-red-400' : 'font-bold text-green-400'
-                      }>
-                        {volatilityMetrics.ivHVSpread > 0 ? '+' : ''}
-                        {(volatilityMetrics.ivHVSpread * 100).toFixed(2)}%
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-500 mt-2">
-                      {volatilityMetrics.ivHVSpread > 0 
-                        ? 'IV premium suggests fear/hedging demand'
-                        : 'IV discount suggests complacency'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-gray-800 p-6 rounded-lg">
-                <div className="flex items-center mb-4">
-                  <h3 className="text-lg font-semibold">Put/Call Metrics</h3>
-                  <InfoTooltip text="PCR measures put vs call activity. High PCR = bearish positioning (contrarian bullish). Low PCR = bullish positioning (contrarian bearish)." />
-                </div>
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex justify-between mb-2">
-                      <span className="text-gray-400">PCR (Volume)</span>
-                      <span className="font-bold">{volatilityMetrics.pcrVolume.toFixed(3)}</span>
-                    </div>
-                    <p className="text-sm text-gray-500">
-                      {volatilityMetrics.pcrVolume > 1.2 ? '⚠️ High put buying (contrarian bullish)' :
-                       volatilityMetrics.pcrVolume < 0.7 ? '⚠️ High call buying (contrarian bearish)' :
-                       '✓ Neutral flow'}
-                    </p>
-                  </div>
-                  <div>
-                    <div className="flex justify-between mb-2">
-                      <span className="text-gray-400">PCR (OI)</span>
-                      <span className="font-bold">{volatilityMetrics.pcrOI.toFixed(3)}</span>
-                    </div>
-                    <p className="text-sm text-gray-500">Longer-term positioning</p>
-                  </div>
-                  <div className="pt-4 border-t border-gray-700">
-                    <div className="flex justify-between mb-2">
-                      <span className="text-gray-400">IV Skew</span>
-                      <span className="font-bold text-orange-400">
-                        {(volatilityMetrics.ivSkew * 100).toFixed(2)}%
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-500">
-                      {volatilityMetrics.ivSkew > 0.05 
-                        ? 'Elevated put premium (tail hedging)' 
-                        : 'Normal skew levels'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* VIX & SKEW */}
-            <div className="bg-gray-800 p-6 rounded-lg">
-              <div className="flex items-center mb-4">
-                <h3 className="text-lg font-semibold">VIX & SKEW Analysis</h3>
-                <InfoTooltip text="VIX measures overall vol. SKEW measures tail risk (fat left tail). Both high = max fear. Both low = max complacency. Watch for divergences." />
-              </div>
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <p className="text-4xl font-bold text-orange-400">{volatilityMetrics.vixLevel.toFixed(2)}</p>
-                  <p className="text-gray-400 mt-2">VIX Level</p>
-                  <p className="text-sm font-semibold mt-2">
-                    {volatilityMetrics.vixLevel > 25 ? '⚠️ Elevated Fear (contrarian buy)' :
-                     volatilityMetrics.vixLevel < 12 ? '⚠️ Extreme Complacency (risk building)' :
-                     volatilityMetrics.vixLevel < 15 ? '✓ Low Vol (trending market)' :
-                     '○ Normal Range'}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-4xl font-bold text-yellow-400">{skewValue.toFixed(2)}</p>
-                  <p className="text-gray-400 mt-2">CBOE SKEW</p>
-                  <p className="text-sm font-semibold mt-2">
-                    {skewValue > 140 ? '⚠️ High Tail Risk (crash hedging)' :
-                     skewValue < 120 ? '⚠️ Low Tail Risk (complacent)' :
-                     '○ Normal Range (120-140)'}
-                  </p>
-                </div>
-              </div>
-              <p className="text-xs text-gray-500 mt-4 pt-4 border-t border-gray-700">
-                <strong>Key relationship:</strong> VIX measures expected volatility. SKEW measures expected crash risk. High VIX + High SKEW = extreme fear (often good entry). Low VIX + Low SKEW = dangerous complacency.
-              </p>
-            </div>
-
-            {/* Tail Risk Monitor */}
-            <div className="bg-gray-800 p-6 rounded-lg">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center">
-                  <h3 className="text-lg font-semibold">Tail Risk Monitor (SKEW Index)</h3>
-                  <InfoTooltip text="Rising SKEW = rising crash protection demand. Often leads SPY by a few days. Extreme SKEW readings (>150) can be contrarian bullish." />
-                </div>
-                <div className="text-sm">
-                  <span className="text-gray-400">Risk Level: </span>
-                  <span className={
-                    skewValue > 145 ? 'font-bold text-red-400' : 
-                    skewValue > 140 ? 'font-bold text-orange-400' :
-                    skewValue < 120 ? 'font-bold text-green-400' : 
-                    'font-bold text-blue-400'
-                  }>
-                    {skewValue > 145 ? 'EXTREME' : skewValue > 140 ? 'ELEVATED' : skewValue < 120 ? 'LOW' : 'NORMAL'}
-                  </span>
-                </div>
-              </div>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={historicalData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="date" stroke="#9CA3AF" />
-                  <YAxis 
-                    yAxisId="left" 
-                    stroke="#10B981"
-                    domain={['dataMin - 2', 'dataMax + 2']}
-                    label={{ value: 'SPY % Change', angle: -90, position: 'insideLeft', fill: '#10B981' }}
-                  />
-                  <YAxis 
-                    yAxisId="right" 
-                    orientation="right" 
-                    stroke="#FCD34D"
-                    domain={[110, 160]}
-                    label={{ value: 'SKEW Index', angle: 90, position: 'insideRight', fill: '#FCD34D' }}
-                  />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
-                    formatter={(value, name) => {
-                      if (name === 'SPY % Change') return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
-                      return value.toFixed(1);
-                    }}
-                  />
-                  <Legend />
-                  <defs>
-                    <linearGradient id="skewGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#EF4444" stopOpacity={0.2}/>
-                      <stop offset="50%" stopColor="#3B82F6" stopOpacity={0.1}/>
-                      <stop offset="100%" stopColor="#10B981" stopOpacity={0.2}/>
-                    </linearGradient>
-                  </defs>
-                  <Area
-                    yAxisId="right"
-                    type="monotone"
-                    dataKey="skew"
-                    stroke="none"
-                    fill="url(#skewGradient)"
-                  />
-                  <Line 
-                    yAxisId="left"
-                    type="monotone" 
-                    dataKey="spyPctChange" 
-                    stroke="#10B981" 
-                    name="SPY % Change"
-                    strokeWidth={3}
-                    dot={false}
-                  />
-                  <Line 
-                    yAxisId="right"
-                    type="monotone" 
-                    dataKey="skew" 
-                    stroke="#FCD34D" 
-                    name="SKEW"
-                    strokeWidth={3}
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-              <div className="mt-4 grid grid-cols-4 gap-2 text-xs">
-                <div className="p-2 bg-red-900/30 border border-red-600/40 rounded text-center">
-                  <p className="text-red-400 font-bold">&gt;150</p>
-                  <p className="text-gray-400 mt-1">Panic</p>
-                </div>
-                <div className="p-2 bg-orange-900/30 border border-orange-600/40 rounded text-center">
-                  <p className="text-orange-400 font-bold">140-150</p>
-                  <p className="text-gray-400 mt-1">Elevated</p>
-                </div>
-                <div className="p-2 bg-blue-900/30 border border-blue-600/40 rounded text-center">
-                  <p className="text-blue-400 font-bold">120-140</p>
-                  <p className="text-gray-400 mt-1">Normal</p>
-                </div>
-                <div className="p-2 bg-green-900/30 border border-green-600/40 rounded text-center">
-                  <p className="text-green-400 font-bold">&lt;120</p>
-                  <p className="text-gray-400 mt-1">Complacent</p>
-                </div>
-              </div>
-              <div className="mt-3 p-3 bg-purple-900/20 border border-purple-600/30 rounded text-xs">
-                <p className="text-purple-400 font-semibold mb-1">📊 Pattern Recognition:</p>
-                <p className="text-gray-400">
-                  <strong className="text-white">SKEW rising while SPY rises:</strong> Smart money hedging (bearish divergence). 
-                  <strong className="text-white"> SKEW falling while SPY falls:</strong> Capitulation (bullish divergence). 
-                  <strong className="text-white"> SKEW &gt; 150:</strong> Often marks local tops (contrarian buy).
-                </p>
-              </div>
-            </div>
-
-            {/* Correlation Matrix */}
-            <div className="bg-gray-800 p-6 rounded-lg">
-              <div className="flex items-center mb-4">
-                <h3 className="text-lg font-semibold">Metric Correlation Matrix</h3>
-                <InfoTooltip text="Shows how different metrics move together. Strong negative = inverse relationship (normal). Strong positive = abnormal (regime change warning)." />
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-700">
-                      <th className="p-2 text-left">Metric</th>
-                      <th className="p-2 text-center">SPY</th>
-                      <th className="p-2 text-center">VIX</th>
-                      <th className="p-2 text-center">SKEW</th>
-                      <th className="p-2 text-center">PCR</th>
-                      <th className="p-2 text-center">Gamma Flip</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="border-b border-gray-700">
-                      <td className="p-2 font-semibold">SPY</td>
-                      <td className="p-2 text-center bg-blue-900/30">1.00</td>
-                      <td className="p-2 text-center bg-red-900/30 text-red-400">-0.87</td>
-                      <td className="p-2 text-center bg-red-900/20 text-red-400">-0.43</td>
-                      <td className="p-2 text-center bg-red-900/20 text-red-400">-0.31</td>
-                      <td className="p-2 text-center bg-green-900/30 text-green-400">+0.98</td>
-                    </tr>
-                    <tr className="border-b border-gray-700">
-                      <td className="p-2 font-semibold">VIX</td>
-                      <td className="p-2 text-center bg-red-900/30 text-red-400">-0.87</td>
-                      <td className="p-2 text-center bg-blue-900/30">1.00</td>
-                      <td className="p-2 text-center bg-green-900/30 text-green-400">+0.64</td>
-                      <td className="p-2 text-center bg-green-900/30 text-green-400">+0.52</td>
-                      <td className="p-2 text-center bg-red-900/30 text-red-400">-0.81</td>
-                    </tr>
-                    <tr className="border-b border-gray-700">
-                      <td className="p-2 font-semibold">SKEW</td>
-                      <td className="p-2 text-center bg-red-900/20 text-red-400">-0.43</td>
-                      <td className="p-2 text-center bg-green-900/30 text-green-400">+0.64</td>
-                      <td className="p-2 text-center bg-blue-900/30">1.00</td>
-                      <td className="p-2 text-center bg-green-900/20 text-green-400">+0.28</td>
-                      <td className="p-2 text-center bg-red-900/20 text-red-400">-0.39</td>
-                    </tr>
-                    <tr className="border-b border-gray-700">
-                      <td className="p-2 font-semibold">PCR</td>
-                      <td className="p-2 text-center bg-red-900/20 text-red-400">-0.31</td>
-                      <td className="p-2 text-center bg-green-900/30 text-green-400">+0.52</td>
-                      <td className="p-2 text-center bg-green-900/20 text-green-400">+0.28</td>
-                      <td className="p-2 text-center bg-blue-900/30">1.00</td>
-                      <td className="p-2 text-center bg-red-900/20 text-red-400">-0.24</td>
-                    </tr>
-                    <tr>
-                      <td className="p-2 font-semibold">Gamma Flip</td>
-                      <td className="p-2 text-center bg-green-900/30 text-green-400">+0.98</td>
-                      <td className="p-2 text-center bg-red-900/30 text-red-400">-0.81</td>
-                      <td className="p-2 text-center bg-red-900/20 text-red-400">-0.39</td>
-                      <td className="p-2 text-center bg-red-900/20 text-red-400">-0.24</td>
-                      <td className="p-2 text-center bg-blue-900/30">1.00</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div className="mt-4 grid grid-cols-3 gap-4 text-xs">
-                <div className="p-3 bg-green-900/20 border border-green-600/30 rounded">
-                  <p className="text-green-400 font-semibold mb-1">Positive Correlation</p>
-                  <p className="text-gray-400">Metrics move together. Green = 0.5 to 1.0</p>
-                </div>
-                <div className="p-3 bg-gray-700/30 border border-gray-600/30 rounded">
-                  <p className="text-gray-400 font-semibold mb-1">No Correlation</p>
-                  <p className="text-gray-400">Independent. Gray = -0.3 to 0.3</p>
-                </div>
-                <div className="p-3 bg-red-900/20 border border-red-600/30 rounded">
-                  <p className="text-red-400 font-semibold mb-1">Negative Correlation</p>
-                  <p className="text-gray-400">Inverse relationship. Red = -1.0 to -0.5</p>
-                </div>
-              </div>
-              <div className="mt-3 p-3 bg-yellow-900/20 border border-yellow-600/30 rounded text-xs">
-                <p className="text-yellow-400 font-semibold mb-1">⚠️ Key Relationships:</p>
-                <p className="text-gray-400">
-                  <strong>SPY vs VIX (-0.87):</strong> Strong inverse = healthy market. 
-                  <strong> VIX vs SKEW (+0.64):</strong> Fear metrics move together. 
-                  <strong> SPY vs Gamma Flip (+0.98):</strong> Flip point tracks price closely.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Options Chain Tab */}
-        {activeTab === 'options' && (
-          <div className="space-y-6">
-            <div className="bg-gray-800 p-4 rounded-lg">
-              <h3 className="text-lg font-semibold mb-4">SPY Options Chain (Next 4 Weeks)</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-700">
-                    <tr>
-                      <th className="px-4 py-2 text-left">Expiry</th>
-                      <th className="px-4 py-2 text-left">DTE</th>
-                      <th className="px-4 py-2 text-right">Strike</th>
-                      <th className="px-4 py-2 text-center">Type</th>
-                      <th className="px-4 py-2 text-right">Bid/Ask</th>
-                      <th className="px-4 py-2 text-right">IV</th>
-                      <th className="px-4 py-2 text-right">Volume</th>
-                      <th className="px-4 py-2 text-right">OI</th>
-                      <th className="px-4 py-2 text-right">Delta</th>
-                      <th className="px-4 py-2 text-right">Gamma</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {optionsData.slice(0, 120).map((opt, idx) => (
-                      <tr 
-                        key={idx} 
-                        className={
-                          Math.abs(opt.strike - spyPrice) < 2 ? 'border-t border-gray-700 bg-blue-900/20' : 'border-t border-gray-700'
-                        }
-                      >
-                        <td className="px-4 py-2">{opt.expiration}</td>
-                        <td className="px-4 py-2">{opt.daysToExp}</td>
-                        <td className="px-4 py-2 text-right font-mono">${opt.strike}</td>
-                        <td className="px-4 py-2 text-center">
-                          <span className={
-                            opt.type === 'CALL' 
-                              ? 'px-2 py-1 rounded text-xs bg-green-600/30 text-green-400' 
-                              : 'px-2 py-1 rounded text-xs bg-red-600/30 text-red-400'
-                          }>
-                            {opt.type}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2 text-right text-xs">
-                          ${opt.bid.toFixed(2)}/${opt.ask.toFixed(2)}
-                        </td>
-                        <td className="px-4 py-2 text-right">{(opt.iv * 100).toFixed(1)}%</td>
-                        <td className="px-4 py-2 text-right">{opt.volume.toLocaleString()}</td>
-                        <td className="px-4 py-2 text-right">{opt.oi.toLocaleString()}</td>
-                        <td className="px-4 py-2 text-right">{opt.delta.toFixed(3)}</td>
-                        <td className="px-4 py-2 text-right">{opt.gamma.toFixed(4)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <p className="text-sm text-gray-500 mt-4">
-                Showing first 120 contracts. ATM strikes highlighted in blue. Greeks calculated using Black-Scholes.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Dealer Tab */}
-        {activeTab === 'dealer' && dealerMetrics && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-6">
-              <div className="bg-gray-800 p-6 rounded-lg">
-                <div className="flex items-center mb-4">
-                  <h3 className="text-lg font-semibold">Dealer Gamma Exposure</h3>
-                  <InfoTooltip text="Dealers are short gamma when customers are long. Short gamma above flip = must buy rallies/sell dips (amplification). Below flip = opposite (mean reversion)." />
-                </div>
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-sm text-gray-400">Net Position</p>
-                    <p className={
-                      dealerMetrics.isShortGamma ? 'text-3xl font-bold text-red-400' : 'text-3xl font-bold text-green-400'
-                    }>
-                      {dealerMetrics.isShortGamma ? 'SHORT GAMMA' : 'LONG GAMMA'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-400">Total Gamma</p>
-                    <p className="text-2xl font-mono">{dealerMetrics.totalGamma.toExponential(2)}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-400">Gamma Flip Point</p>
-                    <p className="text-2xl font-bold">${dealerMetrics.gammaFlipPoint?.toFixed(2)}</p>
-                    <p className="text-sm text-gray-500 mt-1">
-                      SPY is {spyPrice > dealerMetrics.gammaFlipPoint ? 'ABOVE' : 'BELOW'} flip
-                    </p>
-                  </div>
-                  <div className="pt-4 border-t border-gray-700">
-                    <p className="text-sm font-semibold mb-2">Market Dynamics:</p>
-                    <p className="text-sm text-gray-400">
-                      {dealerMetrics.isShortGamma && spyPrice > dealerMetrics.gammaFlipPoint
-                        ? '📈 Dealers amplify moves (buy high, sell low)'
-                        : dealerMetrics.isShortGamma
-                        ? '📉 Dealers reverse moves (sell high, buy low)'
-                        : '🔒 Dealers dampen volatility'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-gray-800 p-6 rounded-lg">
-                <div className="flex items-center mb-4">
-                  <h3 className="text-lg font-semibold">Additional Metrics</h3>
-                  <InfoTooltip text="Total delta exposure shows directional bias. Max gamma strike is where most hedging flow occurs (pinning effect)." />
-                </div>
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-sm text-gray-400">Total Delta</p>
-                    <p className="text-2xl font-mono">{dealerMetrics.totalDelta.toExponential(2)}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-400">Max Gamma Strike</p>
-                    <p className="text-2xl font-bold">${dealerMetrics.maxGammaStrike.strike}</p>
-                    <p className="text-sm text-gray-500">Potential pin zone</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Gamma Flip vs SPY */}
-            <div className="bg-gray-800 p-6 rounded-lg">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center">
-                  <h3 className="text-lg font-semibold">Dealer Gamma Regime (30 Days)</h3>
-                  <InfoTooltip text="When SPY crosses above flip point, dealer hedging changes from stabilizing to amplifying. Key inflection level for volatility regimes." />
-                </div>
-                <div className="text-sm">
-                  <span className="text-gray-400">Current Regime: </span>
-                  <span className={`font-bold ${spyPrice > dealerMetrics?.gammaFlipPoint ? 'text-red-400' : 'text-green-400'}`}>
-                    {spyPrice > dealerMetrics?.gammaFlipPoint ? 'EXPLOSIVE' : 'DAMPENED'}
-                  </span>
-                </div>
-              </div>
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={historicalData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="date" stroke="#9CA3AF" />
-                  <YAxis 
-                    stroke="#9CA3AF"
-                    domain={['dataMin - 5', 'dataMax + 5']}
-                    label={{ value: 'Price Level ($)', angle: -90, position: 'insideLeft' }}
-                  />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
-                    formatter={(value) => `$${value.toFixed(2)}`}
-                  />
-                  <Legend />
-                  <defs>
-                    <linearGradient id="gammaGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#EF4444" stopOpacity={0.3}/>
-                      <stop offset="100%" stopColor="#10B981" stopOpacity={0.3}/>
-                    </linearGradient>
-                  </defs>
-                  <Area
-                    type="monotone"
-                    dataKey="spy"
-                    stroke="none"
-                    fill="url(#gammaGradient)"
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="spy" 
-                    stroke="#10B981" 
-                    name="SPY Price"
-                    strokeWidth={3}
-                    dot={false}
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="gammaFlip" 
-                    stroke="#EF4444" 
-                    name="Gamma Flip Point"
-                    strokeWidth={3}
-                    strokeDasharray="8 4"
-                    dot={false}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-              <div className="mt-4 grid grid-cols-2 gap-4">
-                <div className="p-3 bg-red-900/20 border border-red-600/30 rounded">
-                  <p className="text-red-400 font-semibold mb-2">🔥 Above Flip = Explosive Regime</p>
-                  <p className="text-xs text-gray-400">Dealers short gamma → Must buy rallies, sell dips → Amplifies moves → Trending/momentum environment</p>
-                </div>
-                <div className="p-3 bg-green-900/20 border border-green-600/30 rounded">
-                  <p className="text-green-400 font-semibold mb-2">🔒 Below Flip = Dampened Regime</p>
-                  <p className="text-xs text-gray-400">Dealers long gamma → Must sell rallies, buy dips → Dampens moves → Choppy/range-bound environment</p>
-                </div>
-              </div>
-              <div className="mt-3 p-3 bg-blue-900/20 border border-blue-600/30 rounded text-xs">
-                <p className="text-blue-400 font-semibold mb-1">💡 Trading Insight:</p>
-                <p className="text-gray-400">
-                  When SPY crosses flip point, expect regime change within 1-3 days. 
-                  <strong className="text-white"> Above flip: </strong>Buy breakouts, tight stops. 
-                  <strong className="text-white"> Below flip: </strong>Fade extremes, wider stops.
-                </p>
-              </div>
-            </div>
-
-            {/* Gamma by Strike */}
-            <div className="bg-gray-800 p-6 rounded-lg">
-              <div className="flex items-center mb-4">
-                <h3 className="text-lg font-semibold">Gamma Exposure by Strike</h3>
-                <InfoTooltip text="Negative gamma (red) = dealers must chase price. Positive gamma (green) = dealers provide liquidity. Large concentrations = potential support/resistance." />
-              </div>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={dealerMetrics.strikes}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="strike" stroke="#9CA3AF" />
-                  <YAxis stroke="#9CA3AF" />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
-                    formatter={(value) => value.toExponential(2)}
-                  />
-                  <Bar dataKey="netGamma" name="Net Gamma">
-                    {dealerMetrics.strikes.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.netGamma > 0 ? '#10B981' : '#EF4444'} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-              <p className="text-xs text-gray-500 mt-2">
-                <strong>Interpretation:</strong> Red bars = volatility amplification zones. Green bars = volatility dampening zones. Tallest bars = strongest hedging flows.
-              </p>
-            </div>
-
-            {/* Call vs Put Gamma */}
-            <div className="bg-gray-800 p-6 rounded-lg">
-              <div className="flex items-center mb-4">
-                <h3 className="text-lg font-semibold">Call vs Put Gamma Distribution</h3>
-                <InfoTooltip text="Call gamma (green) above put gamma (red) = bullish skew. Put gamma dominance = bearish skew. Crossover points are key levels." />
-              </div>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={dealerMetrics.strikes}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                  <XAxis dataKey="strike" stroke="#9CA3AF" />
-                  <YAxis stroke="#9CA3AF" />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
-                    formatter={(value) => value.toExponential(2)}
-                  />
-                  <Legend />
-                  <Line 
-                    type="monotone" 
-                    dataKey="callGamma" 
-                    stroke="#10B981" 
-                    name="Call Gamma" 
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="putGamma" 
-                    stroke="#EF4444" 
-                    name="Put Gamma" 
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-              <p className="text-xs text-gray-500 mt-2">
-                <strong>Interpretation:</strong> Put gamma typically dominates (downside hedging). When call gamma spikes, watch for squeeze potential. Balance shifts = regime change.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Predictions Tab */}
-        {activeTab === 'predictions' && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h3 className="text-lg font-semibold">Prediction History</h3>
-              <div className="flex gap-2">
-                <button
-                  onClick={exportPreds}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded transition-colors"
-                >
-                  Export JSON
-                </button>
-                <label className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded cursor-pointer transition-colors">
-                  Import JSON
-                  <input
-                    type="file"
-                    accept=".json"
-                    onChange={importPreds}
-                    className="hidden"
-                  />
-                </label>
-              </div>
-            </div>
-
-            {predictions.length > 0 ? (
-              <>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="bg-gray-800 p-4 rounded-lg">
-                    <p className="text-sm text-gray-400">Total Predictions</p>
-                    <p className="text-3xl font-bold">{predictions.length}</p>
-                  </div>
-                  <div className="bg-gray-800 p-4 rounded-lg">
-                    <p className="text-sm text-gray-400">Accuracy</p>
-                    <p className="text-3xl font-bold text-green-400">
-                      {((predictions.filter(p => p.correct).length / predictions.length) * 100).toFixed(1)}%
-                    </p>
-                  </div>
-                  <div className="bg-gray-800 p-4 rounded-lg">
-                    <p className="text-sm text-gray-400">Win/Loss</p>
-                    <p className="text-3xl font-bold">
-                      {predictions.filter(p => p.correct).length}W / {predictions.filter(p => !p.correct).length}L
-                    </p>
-                  </div>
-                </div>
-
-                <div className="bg-gray-800 p-4 rounded-lg">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-700">
-                      <tr>
-                        <th className="px-4 py-2 text-left">Date</th>
-                        <th className="px-4 py-2 text-left">Prediction</th>
-                        <th className="px-4 py-2 text-left">Actual</th>
-                        <th className="px-4 py-2 text-left">Result</th>
-                        <th className="px-4 py-2 text-right">Confidence</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {predictions.slice().reverse().map((pred, idx) => (
-                        <tr key={idx} className="border-t border-gray-700">
-                          <td className="px-4 py-2">{new Date(pred.timestamp).toLocaleDateString()}</td>
-                          <td className="px-4 py-2">
-                            <span className={
-                              pred.prediction === 'BULLISH' 
-                                ? 'px-2 py-1 rounded text-xs bg-green-600/30 text-green-400' 
-                                : 'px-2 py-1 rounded text-xs bg-red-600/30 text-red-400'
-                            }>
-                              {pred.prediction}
-                            </span>
-                          </td>
-                          <td className="px-4 py-2">
-                            <span className={
-                              pred.actualMove === 'UP' 
-                                ? 'px-2 py-1 rounded text-xs bg-green-600/30 text-green-400' 
-                                : 'px-2 py-1 rounded text-xs bg-red-600/30 text-red-400'
-                            }>
-                              {pred.actualMove}
-                            </span>
-                          </td>
-                          <td className="px-4 py-2">
-                            <span className={
-                              pred.correct 
-                                ? 'px-2 py-1 rounded text-xs bg-blue-600/30 text-blue-400' 
-                                : 'px-2 py-1 rounded text-xs bg-gray-600/30 text-gray-400'
-                            }>
-                              {pred.correct ? '✓ CORRECT' : '✗ WRONG'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-2 text-right">{(pred.confidence * 100).toFixed(0)}%</td>
-                        </tr>
+              {/* MACD Chart */}
+              <div className="bg-gray-800 rounded-lg p-6">
+                <h2 className="text-xl font-semibold mb-4">MACD (Moving Average Convergence Divergence)</h2>
+                <ResponsiveContainer width="100%" height={250}>
+                  <ComposedChart data={processedData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis dataKey="date" stroke="#9CA3AF" tick={{ fontSize: 12 }} />
+                    <YAxis stroke="#9CA3AF" />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
+                    />
+                    <Legend />
+                    <ReferenceLine y={0} stroke="#6B7280" />
+                    <Bar dataKey="macdHistogram" name="Histogram">
+                      {processedData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.macdHistogram > 0 ? '#10B981' : '#EF4444'} />
                       ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            ) : (
-              <div className="bg-gray-800 p-8 rounded-lg text-center">
-                <p className="text-gray-400">No predictions logged yet. Start tracking from Overview tab.</p>
+                    </Bar>
+                    <Line
+                      type="monotone"
+                      dataKey="macd"
+                      stroke="#3B82F6"
+                      strokeWidth={2}
+                      name="MACD"
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="macdSignal"
+                      stroke="#F59E0B"
+                      strokeWidth={2}
+                      name="Signal"
+                      dot={false}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+                <p className="text-xs text-gray-400 mt-2">
+                  MACD crossing above signal = bullish. Histogram expansion = momentum acceleration.
+                </p>
               </div>
-            )}
-          </div>
-        )}
 
-        {/* Market Structure Tab */}
-        {activeTab === 'structure' && (
-          <MarketStructureAnalysis 
-            priceData={historicalData}
-            optionsData={optionsData}
-            currentPrice={spyPrice}
-            vixPrice={vixPrice}
-            skewValue={skewValue}
-          />
-        )}
+              {/* Stochastic Oscillator */}
+              <div className="bg-gray-800 rounded-lg p-6">
+                <h2 className="text-xl font-semibold mb-4">Stochastic Oscillator</h2>
+                <ResponsiveContainer width="100%" height={250}>
+                  <ComposedChart data={processedData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis dataKey="date" stroke="#9CA3AF" tick={{ fontSize: 12 }} />
+                    <YAxis domain={[0, 100]} stroke="#9CA3AF" />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
+                    />
+                    <Legend />
+                    <ReferenceLine y={80} stroke="#EF4444" strokeDasharray="3 3" label="Overbought" />
+                    <ReferenceLine y={20} stroke="#10B981" strokeDasharray="3 3" label="Oversold" />
+                    <Area
+                      type="monotone"
+                      dataKey="stochK"
+                      stroke="#8B5CF6"
+                      fill="#8B5CF6"
+                      fillOpacity={0.2}
+                      name="%K"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="stochD"
+                      stroke="#EC4899"
+                      strokeWidth={2}
+                      name="%D"
+                      dot={false}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+                <p className="text-xs text-gray-400 mt-2">
+                  %K crossing above %D in oversold territory = bullish signal. Vice versa for bearish.
+                </p>
+              </div>
+
+              {/* Momentum Summary Grid */}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <h3 className="text-sm text-gray-400 mb-2">Trend Direction</h3>
+                  <p className="text-2xl font-bold capitalize">{swingAnalysis.current.trend}</p>
+                  <div className="mt-2 w-full h-2 bg-gray-700 rounded-full">
+                    <div
+                      className={
+                        swingAnalysis.current.trend === 'uptrend' ? 'h-full rounded-full bg-green-500' :
+                        swingAnalysis.current.trend === 'downtrend' ? 'h-full rounded-full bg-red-500' :
+                        'h-full rounded-full bg-yellow-500'
+                      }
+                      style={{ width: `${swingAnalysis.current.strength * 100}%` }}
+                    />
+                  </div>
+                </div>
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <h3 className="text-sm text-gray-400 mb-2">Swing Highs</h3>
+                  <p className="text-2xl font-bold">{swingAnalysis.highs.length}</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Last: ${swingAnalysis.highs[swingAnalysis.highs.length - 1]?.price.toFixed(2) || 'N/A'}
+                  </p>
+                </div>
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <h3 className="text-sm text-gray-400 mb-2">Swing Lows</h3>
+                  <p className="text-2xl font-bold">{swingAnalysis.lows.length}</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Last: ${swingAnalysis.lows[swingAnalysis.lows.length - 1]?.price.toFixed(2) || 'N/A'}
+                  </p>
+                </div>
+              </div>
+            </div>
+            </div>
+          )}
+
+          {/* Options Walls Tab */}
+          {activeSection === 'walls' && (
+            <div className="space-y-6">
+              <div className="text-white">
+              {/* Max Pain & Key Walls */}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <h3 className="text-sm text-gray-400 mb-2">Max Pain</h3>
+                  <p className="text-3xl font-bold text-yellow-400">
+                    ${optionsWalls.maxPain?.toFixed(2) || 'N/A'}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Price where option sellers have minimum pain
+                  </p>
+                </div>
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <h3 className="text-sm text-gray-400 mb-2">Support Walls</h3>
+                  <p className="text-3xl font-bold text-green-400">
+                    {optionsWalls.supportWalls?.length || 0}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Put-heavy strikes below price
+                  </p>
+                </div>
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <h3 className="text-sm text-gray-400 mb-2">Resistance Walls</h3>
+                  <p className="text-3xl font-bold text-red-400">
+                    {optionsWalls.resistanceWalls?.length || 0}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Call-heavy strikes above price
+                  </p>
+                </div>
+              </div>
+
+              {/* Open Interest by Strike */}
+              <div className="bg-gray-800 rounded-lg p-6">
+                <h2 className="text-xl font-semibold mb-4">Open Interest by Strike</h2>
+                <ResponsiveContainer width="100%" height={350}>
+                  <ComposedChart data={optionsWalls.walls}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis dataKey="strike" stroke="#9CA3AF" />
+                    <YAxis stroke="#9CA3AF" />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
+                      formatter={(value, name) => [value.toLocaleString(), name]}
+                    />
+                    <Legend />
+                    {currentPrice && (
+                      <ReferenceLine
+                        x={currentPrice}
+                        stroke="#FFFFFF"
+                        strokeWidth={2}
+                        label={{
+                          value: 'Current Price',
+                          fill: '#FFFFFF',
+                          fontSize: 12
+                        }}
+                      />
+                    )}
+                    {optionsWalls.maxPain && (
+                      <ReferenceLine
+                        x={optionsWalls.maxPain}
+                        stroke="#F59E0B"
+                        strokeDasharray="5 5"
+                        strokeWidth={2}
+                        label={{
+                          value: 'Max Pain',
+                          fill: '#F59E0B',
+                          fontSize: 12
+                        }}
+                      />
+                    )}
+                    <Bar dataKey="callOI" stackId="oi" fill="#10B981" name="Call OI" />
+                    <Bar dataKey="putOI" stackId="oi" fill="#EF4444" name="Put OI" />
+                  </ComposedChart>
+                </ResponsiveContainer>
+                <p className="text-xs text-gray-400 mt-2">
+                  High OI strikes act as magnets. Price tends to gravitate toward max pain into expiration.
+                </p>
+              </div>
+
+              {/* Net Gamma Exposure */}
+              <div className="bg-gray-800 rounded-lg p-6">
+                <h2 className="text-xl font-semibold mb-4">Net Gamma Exposure by Strike</h2>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={optionsWalls.walls}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis dataKey="strike" stroke="#9CA3AF" />
+                    <YAxis stroke="#9CA3AF" />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
+                      formatter={(value) => value.toExponential(2)}
+                    />
+                    {currentPrice && (
+                      <ReferenceLine
+                        x={currentPrice}
+                        stroke="#FFFFFF"
+                        strokeWidth={2}
+                      />
+                    )}
+                    <Bar dataKey="netGamma" name="Net Gamma">
+                      {optionsWalls.walls.map((entry, index) => (
+                        <Cell 
+                          key={`cell-${index}`} 
+                          fill={entry.netGamma > 0 ? '#10B981' : '#EF4444'} 
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+                <p className="text-xs text-gray-400 mt-2">
+                  Negative gamma (red) = dealers chase price. Positive gamma (green) = dealers dampen volatility.
+                </p>
+              </div>
+
+              {/* Put/Call Ratio by Strike */}
+              <div className="bg-gray-800 rounded-lg p-6">
+                <h2 className="text-xl font-semibold mb-4">Put/Call Ratio by Strike</h2>
+                <ResponsiveContainer width="100%" height={250}>
+                  <LineChart data={optionsWalls.walls}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis dataKey="strike" stroke="#9CA3AF" />
+                    <YAxis stroke="#9CA3AF" />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
+                    />
+                    {currentPrice && (
+                      <ReferenceLine
+                        x={currentPrice}
+                        stroke="#FFFFFF"
+                        strokeWidth={2}
+                      />
+                    )}
+                    <ReferenceLine y={1} stroke="#6B7280" strokeDasharray="3 3" label="Neutral" />
+                    <Line
+                      type="monotone"
+                      dataKey="putCallRatio"
+                      stroke="#8B5CF6"
+                      strokeWidth={2}
+                      name="P/C Ratio"
+                      dot={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+                <p className="text-xs text-gray-400 mt-2">
+                  P/C &gt; 1 = bearish positioning. P/C &lt; 1 = bullish positioning.
+                </p>
+              </div>
+            </div>
+            </div>
+          )}
+
+          {/* Volume Profile Tab */}
+          {activeSection === 'volume' && (
+            <div className="space-y-6">
+              <div className="text-white">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <h3 className="text-sm text-gray-400 mb-2">Point of Control (POC)</h3>
+                  <p className="text-3xl font-bold text-yellow-400">
+                    ${volumeProfile.poc?.priceLevel.toFixed(2) || 'N/A'}
+                  </p>
+                </div>
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <h3 className="text-sm text-gray-400 mb-2">Value Area High</h3>
+                  <p className="text-3xl font-bold text-blue-400">
+                    ${volumeProfile.vah?.toFixed(2) || 'N/A'}
+                  </p>
+                </div>
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <h3 className="text-sm text-gray-400 mb-2">Value Area Low</h3>
+                  <p className="text-3xl font-bold text-blue-400">
+                    ${volumeProfile.val?.toFixed(2) || 'N/A'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-gray-800 rounded-lg p-6">
+                <h2 className="text-xl font-semibold mb-4">Volume Profile</h2>
+                <ResponsiveContainer width="100%" height={500}>
+                  <ComposedChart
+                    layout="vertical"
+                    data={volumeProfile.profile}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis type="number" stroke="#9CA3AF" />
+                    <YAxis 
+                      dataKey="priceLevel" 
+                      type="number"
+                      stroke="#9CA3AF"
+                      domain={['dataMin', 'dataMax']}
+                      tickFormatter={(val) => `$${val.toFixed(2)}`}
+                    />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
+                      formatter={(value, name) => [value.toLocaleString(), 'Volume']}
+                      labelFormatter={(val) => `Price: $${val.toFixed(2)}`}
+                    />
+                    {currentPrice && (
+                      <ReferenceLine
+                        y={currentPrice}
+                        stroke="#FFFFFF"
+                        strokeWidth={2}
+                        label={{ value: 'Current', fill: '#FFFFFF', fontSize: 11 }}
+                      />
+                    )}
+                    {volumeProfile.poc && (
+                      <ReferenceLine
+                        y={volumeProfile.poc.priceLevel}
+                        stroke="#F59E0B"
+                        strokeWidth={2}
+                        strokeDasharray="5 5"
+                        label={{ value: 'POC', fill: '#F59E0B', fontSize: 11 }}
+                      />
+                    )}
+                    {volumeProfile.vah && (
+                      <ReferenceLine
+                        y={volumeProfile.vah}
+                        stroke="#3B82F6"
+                        strokeDasharray="3 3"
+                        label={{ value: 'VAH', fill: '#3B82F6', fontSize: 10 }}
+                      />
+                    )}
+                    {volumeProfile.val && (
+                      <ReferenceLine
+                        y={volumeProfile.val}
+                        stroke="#3B82F6"
+                        strokeDasharray="3 3"
+                        label={{ value: 'VAL', fill: '#3B82F6', fontSize: 10 }}
+                      />
+                    )}
+                    <Bar
+                      dataKey="volume"
+                      fill="#60A5FA"
+                      opacity={0.7}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+                <p className="text-xs text-gray-400 mt-2">
+                  POC = highest traded volume. Value Area = 70% of volume distribution. 
+                  Price tends to return to high-volume nodes.
+                </p>
+              </div>
+            </div>
+            </div>
+          )}
+
+          {/* Correlation Tab */}
+          {activeSection === 'correlation' && (
+            <div className="space-y-6">
+              <div className="text-white">
+              {correlationData.length > 0 ? (
+                <>
+              <div className="bg-gray-800 rounded-lg p-6">
+                <h2 className="text-xl font-semibold mb-4">SPY vs VIX Correlation (14-Day Rolling)</h2>
+                <ResponsiveContainer width="100%" height={300}>
+                  <ComposedChart data={correlationData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis 
+                      dataKey="timestamp" 
+                      stroke="#9CA3AF"
+                      tickFormatter={(ts) => new Date(ts).toLocaleDateString()}
+                      tick={{ fontSize: 11 }}
+                      type="number"
+                      domain={['dataMin', 'dataMax']}
+                    />
+                    <YAxis 
+                      yAxisId="left"
+                      domain={[-1, 1]} 
+                      stroke="#9CA3AF" 
+                      label={{ value: 'Correlation', angle: -90, position: 'insideLeft' }}
+                    />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
+                      formatter={(value, name) => [
+                        name === 'spyVixCorr' ? value.toFixed(3) : value.toFixed(2),
+                        name
+                      ]}
+                      labelFormatter={(ts) => new Date(ts).toLocaleDateString()}
+                    />
+                    <Legend />
+                    <ReferenceLine y={0} stroke="#6B7280" />
+                    <ReferenceLine y={-0.5} stroke="#EF4444" strokeDasharray="3 3" />
+                    <Area
+                      type="monotone"
+                      dataKey="spyVixCorr"
+                      stroke="#8B5CF6"
+                      fill="#8B5CF6"
+                      fillOpacity={0.3}
+                      name="SPY-VIX Correlation"
+                      yAxisId="left"
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+                <p className="text-xs text-gray-400 mt-2">
+                  Typically negative (-0.7 to -0.9). Breaking toward zero or positive = potential regime change.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                <div className="bg-gray-800 rounded-lg p-6">
+                  <h3 className="text-lg font-semibold mb-4">Current Correlations</h3>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center p-3 bg-gray-700/50 rounded">
+                      <span>SPY vs VIX</span>
+                      <span className="font-bold text-purple-400">
+                        {correlationData.length > 0 
+                          ? correlationData[correlationData.length - 1].spyVixCorr.toFixed(3)
+                          : 'N/A'
+                        }
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center p-3 bg-gray-700/50 rounded">
+                      <span>Correlation Strength</span>
+                      <span className={
+                        Math.abs(correlationData[correlationData.length - 1]?.spyVixCorr || 0) > 0.7
+                          ? 'font-bold text-green-400'
+                          : Math.abs(correlationData[correlationData.length - 1]?.spyVixCorr || 0) > 0.4
+                          ? 'font-bold text-yellow-400'
+                          : 'font-bold text-red-400'
+                      }>
+                        {Math.abs(correlationData[correlationData.length - 1]?.spyVixCorr || 0) > 0.7
+                          ? 'Strong'
+                          : Math.abs(correlationData[correlationData.length - 1]?.spyVixCorr || 0) > 0.4
+                          ? 'Moderate'
+                          : 'Weak'
+                        }
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-gray-800 rounded-lg p-6">
+                  <h3 className="text-lg font-semibold mb-4">Interpretation</h3>
+                  <div className="space-y-2 text-sm">
+                    <p className="text-gray-300">
+                      <span className="text-purple-400 font-semibold">Strong Negative (-0.7 to -1):</span> Normal market conditions. VIX rises when SPY falls.
+                    </p>
+                    <p className="text-gray-300">
+                      <span className="text-yellow-400 font-semibold">Weakening Correlation (-0.3 to -0.7):</span> Potential regime shift. Monitor closely.
+                    </p>
+                    <p className="text-gray-300">
+                      <span className="text-red-400 font-semibold">Positive Correlation (0 to +1):</span> Unusual. Both rising = crisis. Both falling = complacency.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              </>
+              ) : (
+                <div className="bg-gray-800 rounded-lg p-12 text-center">
+                  <AlertTriangle size={48} className="mx-auto mb-4 text-yellow-500" />
+                  <h3 className="text-xl font-bold mb-2">Insufficient Data for Correlation</h3>
+                  <p className="text-gray-400">
+                    Need at least 15 days of data to calculate rolling correlation. 
+                    Currently have {processedData.length} days.
+                  </p>
+                </div>
+              )}
+            </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 };
 
-export default SPYDashboard;
+export default MarketStructureAnalysis;

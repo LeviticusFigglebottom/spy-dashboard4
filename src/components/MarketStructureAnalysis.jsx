@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import {
+import { 
   LineChart, Line, BarChart, Bar, ScatterChart, Scatter, ComposedChart,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
   ReferenceLine, ReferenceArea, Area, Cell
 } from 'recharts';
-import {
-  TrendingUp, TrendingDown, AlertTriangle, Activity,
-  Layers, Target, Zap, BarChart3
+import { 
+  TrendingUp, TrendingDown, AlertTriangle, Activity, 
+  Layers, Target, Zap, BarChart3 
 } from 'lucide-react';
 
 /**
@@ -23,12 +23,12 @@ import {
  * - Swing High/Low tracking with rejection zones
  */
 
-const MarketStructureAnalysis = ({
-  priceData = [],
-  optionsData = [],
+const MarketStructureAnalysis = ({ 
+  priceData = [], 
+  optionsData = [], 
   currentPrice = null,
   vixPrice = null,
-  skewValue = null
+  skewValue = null 
 }) => {
   const [activeSection, setActiveSection] = useState('structure');
   const [timeframe, setTimeframe] = useState('1D');
@@ -69,19 +69,19 @@ const MarketStructureAnalysis = ({
 
   const calculateRSI = (data, period = 14) => {
     if (data.length < period + 1) return 50;
-
+    
     let gains = 0;
     let losses = 0;
-
+    
     for (let i = data.length - period; i < data.length; i++) {
       const change = data[i] - data[i - 1];
       if (change > 0) gains += change;
       else losses -= change;
     }
-
+    
     const avgGain = gains / period;
     const avgLoss = losses / period;
-
+    
     if (avgLoss === 0) return 100;
     const rs = avgGain / avgLoss;
     return 100 - (100 / (1 + rs));
@@ -91,7 +91,7 @@ const MarketStructureAnalysis = ({
     const ema12 = calculateEMA(data, 12);
     const ema26 = calculateEMA(data, 26);
     if (!ema12 || !ema26) return { macd: 0, signal: 0, histogram: 0 };
-
+    
     const macd = ema12 - ema26;
     const signal = macd * 0.15; // Simplified signal line
     return {
@@ -103,17 +103,17 @@ const MarketStructureAnalysis = ({
 
   const calculateStochastic = (highs, lows, closes, period = 14) => {
     if (closes.length < period) return { k: 50, d: 50 };
-
+    
     const recentHighs = highs.slice(-period);
     const recentLows = lows.slice(-period);
     const currentClose = closes[closes.length - 1];
-
+    
     const highestHigh = Math.max(...recentHighs);
     const lowestLow = Math.min(...recentLows);
-
+    
     const k = ((currentClose - lowestLow) / (highestHigh - lowestLow)) * 100;
     const d = k * 0.3 + 50 * 0.7; // Simplified %D
-
+    
     return { k, d };
   };
 
@@ -140,8 +140,8 @@ const MarketStructureAnalysis = ({
       ];
 
       // Swing High
-      if (prices[2] > prices[0] && prices[2] > prices[1] &&
-        prices[2] > prices[3] && prices[2] > prices[4]) {
+      if (prices[2] > prices[0] && prices[2] > prices[1] && 
+          prices[2] > prices[3] && prices[2] > prices[4]) {
         swings.highs.push({
           index: i,
           price: prices[2],
@@ -151,8 +151,8 @@ const MarketStructureAnalysis = ({
       }
 
       // Swing Low
-      if (prices[2] < prices[0] && prices[2] < prices[1] &&
-        prices[2] < prices[3] && prices[2] < prices[4]) {
+      if (prices[2] < prices[0] && prices[2] < prices[1] && 
+          prices[2] < prices[3] && prices[2] < prices[4]) {
         swings.lows.push({
           index: i,
           price: prices[2],
@@ -239,7 +239,7 @@ const MarketStructureAnalysis = ({
     // Cluster nearby levels
     const clusters = [];
     allPoints.forEach(point => {
-      const existingCluster = clusters.find(c =>
+      const existingCluster = clusters.find(c => 
         Math.abs(c.price - point.price) / c.price < tolerance
       );
 
@@ -277,7 +277,7 @@ const MarketStructureAnalysis = ({
 
     const prices = data.map(d => d.close);
     const volumes = data.map(d => d.volume || 1000000);
-
+    
     const minPrice = Math.min(...prices);
     const maxPrice = Math.max(...prices);
     const numBins = 50;
@@ -303,18 +303,18 @@ const MarketStructureAnalysis = ({
     }
 
     // Point of Control (highest volume node)
-    const poc = profile.reduce((max, curr) =>
+    const poc = profile.reduce((max, curr) => 
       curr.volume > max.volume ? curr : max
-      , profile[0]);
+    , profile[0]);
 
     // Value Area High/Low (70% of volume)
     const totalVolume = profile.reduce((sum, p) => sum + p.volume, 0);
     const valueVolume = totalVolume * 0.7;
-
+    
     const sortedByVolume = [...profile].sort((a, b) => b.volume - a.volume);
     let accumulatedVolume = 0;
     const valueArea = [];
-
+    
     for (const node of sortedByVolume) {
       if (accumulatedVolume < valueVolume) {
         valueArea.push(node);
@@ -339,7 +339,7 @@ const MarketStructureAnalysis = ({
     }
 
     const strikeData = {};
-
+    
     optionsData.forEach(opt => {
       const strike = opt.strike;
       if (!strikeData[strike]) {
@@ -386,7 +386,7 @@ const MarketStructureAnalysis = ({
     // Identify significant walls (top 20% OI)
     const sortedByOI = [...walls].sort((a, b) => b.totalOI - a.totalOI);
     const threshold = sortedByOI[Math.floor(sortedByOI.length * 0.2)]?.totalOI || 0;
-
+    
     const significantWalls = walls.filter(w => w.totalOI >= threshold);
 
     return {
@@ -429,16 +429,16 @@ const MarketStructureAnalysis = ({
   const generateMockOptionsWalls = (currentPrice) => {
     const basePrice = currentPrice || 595;
     const walls = [];
-
+    
     for (let i = -10; i <= 10; i++) {
       const strike = Math.round(basePrice + i * 5);
       const distanceFromPrice = Math.abs(strike - basePrice);
-
+      
       // OI distribution: higher near current price, with skew
       const baseOI = 50000 * Math.exp(-distanceFromPrice / 15);
       const callSkew = strike > basePrice ? 0.8 : 1.2;
       const putSkew = strike < basePrice ? 1.3 : 0.7;
-
+      
       walls.push({
         strike,
         callOI: Math.round(baseOI * callSkew * (0.8 + Math.random() * 0.4)),
@@ -478,15 +478,15 @@ const MarketStructureAnalysis = ({
 
   function calculateCorrelation(arr1, arr2) {
     if (arr1.length !== arr2.length || arr1.length === 0) return 0;
-
+    
     const n = arr1.length;
     const mean1 = arr1.reduce((a, b) => a + b) / n;
     const mean2 = arr2.reduce((a, b) => a + b) / n;
-
+    
     let numerator = 0;
     let denom1 = 0;
     let denom2 = 0;
-
+    
     for (let i = 0; i < n; i++) {
       const diff1 = arr1[i] - mean1;
       const diff2 = arr2[i] - mean2;
@@ -494,19 +494,19 @@ const MarketStructureAnalysis = ({
       denom1 += diff1 * diff1;
       denom2 += diff2 * diff2;
     }
-
+    
     if (denom1 === 0 || denom2 === 0) return 0;
     return numerator / Math.sqrt(denom1 * denom2);
   }
 
   function calculateRollingCorrelation(data, window = 14) {
     const result = [];
-
+    
     for (let i = window; i < data.length; i++) {
       const slice = data.slice(i - window, i);
       const spyPrices = slice.map(d => d.spy);
       const vixPrices = slice.map(d => d.vix);
-
+      
       result.push({
         timestamp: data[i].timestamp,
         spyVixCorr: calculateCorrelation(spyPrices, vixPrices),
@@ -514,7 +514,7 @@ const MarketStructureAnalysis = ({
         vix: data[i].vix
       });
     }
-
+    
     return result;
   }
 
@@ -536,7 +536,7 @@ const MarketStructureAnalysis = ({
       const closePrice = point.close || point.spy || currentPrice || 595;
       const highPrice = point.high || closePrice;
       const lowPrice = point.low || closePrice;
-
+      
       const prices = priceData.slice(Math.max(0, index - 50), index + 1).map(p => p.close || p.spy || currentPrice || 595);
       const highs = priceData.slice(Math.max(0, index - 50), index + 1).map(p => p.high || p.close || p.spy || currentPrice || 595);
       const lows = priceData.slice(Math.max(0, index - 50), index + 1).map(p => p.low || p.close || p.spy || currentPrice || 595);
@@ -590,25 +590,62 @@ const MarketStructureAnalysis = ({
   }, [optionsData, currentPrice]);
 
   const correlationData = useMemo(() => {
-    if (!processedData || processedData.length === 0) return [];
-
+    if (!processedData || processedData.length === 0) {
+      console.log('MarketStructure: No processed data for correlation');
+      return [];
+    }
+    
     try {
-      const validData = processedData.filter(d =>
-        d && (d.timestamp || d.fullDate) && (d.vix || vixPrice)
+      const validData = processedData.filter(d => 
+        d && (d.timestamp || d.fullDate) && (d.vix || vixPrice) && (d.spy || d.close)
       );
-
+      
+      console.log('MarketStructure: Valid data for correlation:', validData.length);
+      
       if (validData.length < 15) {
         console.log('MarketStructure: Need 15+ data points for correlation, have:', validData.length);
         return [];
       }
-
-      return calculateRollingCorrelation(
-        validData.map(d => ({
-          timestamp: d.timestamp || d.fullDate?.getTime() || Date.now(),
-          spy: d.close || d.spy || currentPrice || 595,
-          vix: d.vix || vixPrice || 14
-        }))
+      
+      const correlationInput = validData.map(d => {
+        const ts = d.timestamp || d.fullDate?.getTime();
+        const spy = d.close || d.spy || currentPrice || 595;
+        const vix = d.vix || vixPrice || 14;
+        
+        // Ensure timestamp is valid
+        if (!ts || isNaN(ts)) {
+          console.error('Invalid timestamp in data point:', d);
+          return null;
+        }
+        
+        return {
+          timestamp: Number(ts),
+          spy: Number(spy),
+          vix: Number(vix)
+        };
+      }).filter(d => d !== null);
+      
+      console.log('MarketStructure: Correlation input prepared:', correlationInput.length, 'points');
+      console.log('MarketStructure: Sample correlation input:', correlationInput.slice(0, 3));
+      
+      const result = calculateRollingCorrelation(correlationInput);
+      
+      console.log('MarketStructure: Correlation calculated:', result.length, 'points');
+      console.log('MarketStructure: Sample correlation output:', result.slice(0, 3));
+      
+      // Final validation - ensure all values are valid numbers
+      const validResult = result.filter(r => 
+        r && 
+        !isNaN(r.timestamp) && 
+        !isNaN(r.spyVixCorr) && 
+        isFinite(r.spyVixCorr)
       );
+      
+      if (validResult.length !== result.length) {
+        console.warn('MarketStructure: Filtered out', result.length - validResult.length, 'invalid correlation points');
+      }
+      
+      return validResult;
     } catch (error) {
       console.error('Error calculating correlation:', error);
       return [];
@@ -621,15 +658,15 @@ const MarketStructureAnalysis = ({
       console.log('MarketStructure: No processed data for momentum calculation');
       return null;
     }
-
+    
     const latest = processedData[processedData.length - 1];
-
+    
     // Add null checks for all values
     if (!latest || typeof latest.rsi !== 'number' || typeof latest.macdHistogram !== 'number') {
       console.log('MarketStructure: Invalid data in latest point', latest);
       return null;
     }
-
+    
     const rsi = latest.rsi;
     const macdHist = latest.macdHistogram;
     const trend = swingAnalysis.current.trend;
@@ -674,7 +711,7 @@ const MarketStructureAnalysis = ({
     for (let i = 0; i < 100; i++) {
       const change = (Math.random() - 0.48) * 3;
       price += change;
-
+      
       data.push({
         timestamp: now - (100 - i) * 86400000,
         date: new Date(now - (100 - i) * 86400000).toLocaleDateString(),
@@ -756,8 +793,8 @@ const MarketStructureAnalysis = ({
                 <p className="text-sm text-gray-400 mb-1">Signal</p>
                 <div className={
                   currentMomentum.signal === 'BULLISH' ? 'inline-flex items-center px-3 py-1 rounded text-sm font-semibold bg-green-600/20 text-green-400' :
-                    currentMomentum.signal === 'BEARISH' ? 'inline-flex items-center px-3 py-1 rounded text-sm font-semibold bg-red-600/20 text-red-400' :
-                      'inline-flex items-center px-3 py-1 rounded text-sm font-semibold bg-gray-600/20 text-gray-400'
+                  currentMomentum.signal === 'BEARISH' ? 'inline-flex items-center px-3 py-1 rounded text-sm font-semibold bg-red-600/20 text-red-400' :
+                  'inline-flex items-center px-3 py-1 rounded text-sm font-semibold bg-gray-600/20 text-gray-400'
                 }>
                   {currentMomentum.signal === 'BULLISH' && <TrendingUp size={16} className="mr-1" />}
                   {currentMomentum.signal === 'BEARISH' && <TrendingDown size={16} className="mr-1" />}
@@ -768,8 +805,8 @@ const MarketStructureAnalysis = ({
                 <p className="text-sm text-gray-400 mb-1">RSI</p>
                 <p className={
                   currentMomentum.rsi > 70 ? 'text-xl font-bold text-red-400' :
-                    currentMomentum.rsi < 30 ? 'text-xl font-bold text-green-400' :
-                      'text-xl font-bold text-white'
+                  currentMomentum.rsi < 30 ? 'text-xl font-bold text-green-400' :
+                  'text-xl font-bold text-white'
                 }>
                   {currentMomentum.rsi.toFixed(1)}
                 </p>
@@ -790,8 +827,8 @@ const MarketStructureAnalysis = ({
                 <p className="text-sm text-gray-400 mb-1">Stochastic</p>
                 <p className={
                   currentMomentum.stochastic > 80 ? 'text-xl font-bold text-red-400' :
-                    currentMomentum.stochastic < 20 ? 'text-xl font-bold text-green-400' :
-                      'text-xl font-bold text-white'
+                  currentMomentum.stochastic < 20 ? 'text-xl font-bold text-green-400' :
+                  'text-xl font-bold text-white'
                 }>
                   {currentMomentum.stochastic.toFixed(1)}
                 </p>
@@ -843,24 +880,24 @@ const MarketStructureAnalysis = ({
                 <ResponsiveContainer width="100%" height={400}>
                   <ComposedChart data={processedData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                    <XAxis
-                      dataKey="date"
+                    <XAxis 
+                      dataKey="date" 
                       stroke="#9CA3AF"
                       tick={{ fontSize: 12 }}
                     />
-                    <YAxis
+                    <YAxis 
                       stroke="#9CA3AF"
                       domain={['dataMin - 5', 'dataMax + 5']}
                     />
                     <Tooltip
-                      contentStyle={{
-                        backgroundColor: '#1F2937',
+                      contentStyle={{ 
+                        backgroundColor: '#1F2937', 
                         border: '1px solid #374151',
                         borderRadius: '0.5rem'
                       }}
                     />
                     <Legend />
-
+                    
                     {/* Support/Resistance Lines */}
                     {showAnnotations && srLevels.map((level, idx) => (
                       <ReferenceLine
@@ -911,7 +948,7 @@ const MarketStructureAnalysis = ({
                       name="Price"
                       dot={false}
                     />
-
+                    
                     {/* Swing Highs */}
                     {showAnnotations && swingAnalysis.highs.map((high, idx) => (
                       <ReferenceLine
@@ -1010,8 +1047,8 @@ const MarketStructureAnalysis = ({
                 </h3>
                 <div className="space-y-2">
                   {bosAnalysis.bos.slice(-5).reverse().map((bos, idx) => (
-                    <div
-                      key={idx}
+                    <div 
+                      key={idx} 
                       className={
                         bos.type === 'bullish' ? 'p-3 rounded bg-green-600/20' : 'p-3 rounded bg-red-600/20'
                       }
@@ -1051,145 +1088,145 @@ const MarketStructureAnalysis = ({
           {activeSection === 'momentum' && (
             <div className="space-y-6">
               <div className="text-white">
-                {/* RSI Chart */}
-                <div className="bg-gray-800 rounded-lg p-6">
-                  <h2 className="text-xl font-semibold mb-4">RSI (Relative Strength Index)</h2>
-                  <ResponsiveContainer width="100%" height={250}>
-                    <ComposedChart data={processedData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                      <XAxis dataKey="date" stroke="#9CA3AF" tick={{ fontSize: 12 }} />
-                      <YAxis domain={[0, 100]} stroke="#9CA3AF" />
-                      <Tooltip
-                        contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
-                      />
-                      <ReferenceLine y={70} stroke="#EF4444" strokeDasharray="3 3" label="Overbought" />
-                      <ReferenceLine y={30} stroke="#10B981" strokeDasharray="3 3" label="Oversold" />
-                      <ReferenceLine y={50} stroke="#6B7280" strokeDasharray="3 3" />
-                      <Area
-                        type="monotone"
-                        dataKey="rsi"
-                        stroke="#3B82F6"
-                        fill="#3B82F6"
-                        fillOpacity={0.3}
-                        name="RSI"
-                      />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                  <p className="text-xs text-gray-400 mt-2">
-                    RSI &gt; 70 = overbought (potential reversal). RSI &lt; 30 = oversold (potential bounce).
+              {/* RSI Chart */}
+              <div className="bg-gray-800 rounded-lg p-6">
+                <h2 className="text-xl font-semibold mb-4">RSI (Relative Strength Index)</h2>
+                <ResponsiveContainer width="100%" height={250}>
+                  <ComposedChart data={processedData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis dataKey="date" stroke="#9CA3AF" tick={{ fontSize: 12 }} />
+                    <YAxis domain={[0, 100]} stroke="#9CA3AF" />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
+                    />
+                    <ReferenceLine y={70} stroke="#EF4444" strokeDasharray="3 3" label="Overbought" />
+                    <ReferenceLine y={30} stroke="#10B981" strokeDasharray="3 3" label="Oversold" />
+                    <ReferenceLine y={50} stroke="#6B7280" strokeDasharray="3 3" />
+                    <Area
+                      type="monotone"
+                      dataKey="rsi"
+                      stroke="#3B82F6"
+                      fill="#3B82F6"
+                      fillOpacity={0.3}
+                      name="RSI"
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+                <p className="text-xs text-gray-400 mt-2">
+                  RSI &gt; 70 = overbought (potential reversal). RSI &lt; 30 = oversold (potential bounce).
+                </p>
+              </div>
+
+              {/* MACD Chart */}
+              <div className="bg-gray-800 rounded-lg p-6">
+                <h2 className="text-xl font-semibold mb-4">MACD (Moving Average Convergence Divergence)</h2>
+                <ResponsiveContainer width="100%" height={250}>
+                  <ComposedChart data={processedData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis dataKey="date" stroke="#9CA3AF" tick={{ fontSize: 12 }} />
+                    <YAxis stroke="#9CA3AF" />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
+                    />
+                    <Legend />
+                    <ReferenceLine y={0} stroke="#6B7280" />
+                    <Bar dataKey="macdHistogram" name="Histogram">
+                      {processedData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.macdHistogram > 0 ? '#10B981' : '#EF4444'} />
+                      ))}
+                    </Bar>
+                    <Line
+                      type="monotone"
+                      dataKey="macd"
+                      stroke="#3B82F6"
+                      strokeWidth={2}
+                      name="MACD"
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="macdSignal"
+                      stroke="#F59E0B"
+                      strokeWidth={2}
+                      name="Signal"
+                      dot={false}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+                <p className="text-xs text-gray-400 mt-2">
+                  MACD crossing above signal = bullish. Histogram expansion = momentum acceleration.
+                </p>
+              </div>
+
+              {/* Stochastic Oscillator */}
+              <div className="bg-gray-800 rounded-lg p-6">
+                <h2 className="text-xl font-semibold mb-4">Stochastic Oscillator</h2>
+                <ResponsiveContainer width="100%" height={250}>
+                  <ComposedChart data={processedData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis dataKey="date" stroke="#9CA3AF" tick={{ fontSize: 12 }} />
+                    <YAxis domain={[0, 100]} stroke="#9CA3AF" />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
+                    />
+                    <Legend />
+                    <ReferenceLine y={80} stroke="#EF4444" strokeDasharray="3 3" label="Overbought" />
+                    <ReferenceLine y={20} stroke="#10B981" strokeDasharray="3 3" label="Oversold" />
+                    <Area
+                      type="monotone"
+                      dataKey="stochK"
+                      stroke="#8B5CF6"
+                      fill="#8B5CF6"
+                      fillOpacity={0.2}
+                      name="%K"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="stochD"
+                      stroke="#EC4899"
+                      strokeWidth={2}
+                      name="%D"
+                      dot={false}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+                <p className="text-xs text-gray-400 mt-2">
+                  %K crossing above %D in oversold territory = bullish signal. Vice versa for bearish.
+                </p>
+              </div>
+
+              {/* Momentum Summary Grid */}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <h3 className="text-sm text-gray-400 mb-2">Trend Direction</h3>
+                  <p className="text-2xl font-bold capitalize">{swingAnalysis.current.trend}</p>
+                  <div className="mt-2 w-full h-2 bg-gray-700 rounded-full">
+                    <div
+                      className={
+                        swingAnalysis.current.trend === 'uptrend' ? 'h-full rounded-full bg-green-500' :
+                        swingAnalysis.current.trend === 'downtrend' ? 'h-full rounded-full bg-red-500' :
+                        'h-full rounded-full bg-yellow-500'
+                      }
+                      style={{ width: `${swingAnalysis.current.strength * 100}%` }}
+                    />
+                  </div>
+                </div>
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <h3 className="text-sm text-gray-400 mb-2">Swing Highs</h3>
+                  <p className="text-2xl font-bold">{swingAnalysis.highs.length}</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Last: ${swingAnalysis.highs[swingAnalysis.highs.length - 1]?.price.toFixed(2) || 'N/A'}
                   </p>
                 </div>
-
-                {/* MACD Chart */}
-                <div className="bg-gray-800 rounded-lg p-6">
-                  <h2 className="text-xl font-semibold mb-4">MACD (Moving Average Convergence Divergence)</h2>
-                  <ResponsiveContainer width="100%" height={250}>
-                    <ComposedChart data={processedData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                      <XAxis dataKey="date" stroke="#9CA3AF" tick={{ fontSize: 12 }} />
-                      <YAxis stroke="#9CA3AF" />
-                      <Tooltip
-                        contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
-                      />
-                      <Legend />
-                      <ReferenceLine y={0} stroke="#6B7280" />
-                      <Bar dataKey="macdHistogram" name="Histogram">
-                        {processedData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.macdHistogram > 0 ? '#10B981' : '#EF4444'} />
-                        ))}
-                      </Bar>
-                      <Line
-                        type="monotone"
-                        dataKey="macd"
-                        stroke="#3B82F6"
-                        strokeWidth={2}
-                        name="MACD"
-                        dot={false}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="macdSignal"
-                        stroke="#F59E0B"
-                        strokeWidth={2}
-                        name="Signal"
-                        dot={false}
-                      />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                  <p className="text-xs text-gray-400 mt-2">
-                    MACD crossing above signal = bullish. Histogram expansion = momentum acceleration.
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <h3 className="text-sm text-gray-400 mb-2">Swing Lows</h3>
+                  <p className="text-2xl font-bold">{swingAnalysis.lows.length}</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Last: ${swingAnalysis.lows[swingAnalysis.lows.length - 1]?.price.toFixed(2) || 'N/A'}
                   </p>
-                </div>
-
-                {/* Stochastic Oscillator */}
-                <div className="bg-gray-800 rounded-lg p-6">
-                  <h2 className="text-xl font-semibold mb-4">Stochastic Oscillator</h2>
-                  <ResponsiveContainer width="100%" height={250}>
-                    <ComposedChart data={processedData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                      <XAxis dataKey="date" stroke="#9CA3AF" tick={{ fontSize: 12 }} />
-                      <YAxis domain={[0, 100]} stroke="#9CA3AF" />
-                      <Tooltip
-                        contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
-                      />
-                      <Legend />
-                      <ReferenceLine y={80} stroke="#EF4444" strokeDasharray="3 3" label="Overbought" />
-                      <ReferenceLine y={20} stroke="#10B981" strokeDasharray="3 3" label="Oversold" />
-                      <Area
-                        type="monotone"
-                        dataKey="stochK"
-                        stroke="#8B5CF6"
-                        fill="#8B5CF6"
-                        fillOpacity={0.2}
-                        name="%K"
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="stochD"
-                        stroke="#EC4899"
-                        strokeWidth={2}
-                        name="%D"
-                        dot={false}
-                      />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                  <p className="text-xs text-gray-400 mt-2">
-                    %K crossing above %D in oversold territory = bullish signal. Vice versa for bearish.
-                  </p>
-                </div>
-
-                {/* Momentum Summary Grid */}
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="bg-gray-800 rounded-lg p-4">
-                    <h3 className="text-sm text-gray-400 mb-2">Trend Direction</h3>
-                    <p className="text-2xl font-bold capitalize">{swingAnalysis.current.trend}</p>
-                    <div className="mt-2 w-full h-2 bg-gray-700 rounded-full">
-                      <div
-                        className={
-                          swingAnalysis.current.trend === 'uptrend' ? 'h-full rounded-full bg-green-500' :
-                            swingAnalysis.current.trend === 'downtrend' ? 'h-full rounded-full bg-red-500' :
-                              'h-full rounded-full bg-yellow-500'
-                        }
-                        style={{ width: `${swingAnalysis.current.strength * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                  <div className="bg-gray-800 rounded-lg p-4">
-                    <h3 className="text-sm text-gray-400 mb-2">Swing Highs</h3>
-                    <p className="text-2xl font-bold">{swingAnalysis.highs.length}</p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      Last: ${swingAnalysis.highs[swingAnalysis.highs.length - 1]?.price.toFixed(2) || 'N/A'}
-                    </p>
-                  </div>
-                  <div className="bg-gray-800 rounded-lg p-4">
-                    <h3 className="text-sm text-gray-400 mb-2">Swing Lows</h3>
-                    <p className="text-2xl font-bold">{swingAnalysis.lows.length}</p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      Last: ${swingAnalysis.lows[swingAnalysis.lows.length - 1]?.price.toFixed(2) || 'N/A'}
-                    </p>
-                  </div>
                 </div>
               </div>
+            </div>
             </div>
           )}
 
@@ -1197,152 +1234,152 @@ const MarketStructureAnalysis = ({
           {activeSection === 'walls' && (
             <div className="space-y-6">
               <div className="text-white">
-                {/* Max Pain & Key Walls */}
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="bg-gray-800 rounded-lg p-4">
-                    <h3 className="text-sm text-gray-400 mb-2">Max Pain</h3>
-                    <p className="text-3xl font-bold text-yellow-400">
-                      ${optionsWalls.maxPain?.toFixed(2) || 'N/A'}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      Price where option sellers have minimum pain
-                    </p>
-                  </div>
-                  <div className="bg-gray-800 rounded-lg p-4">
-                    <h3 className="text-sm text-gray-400 mb-2">Support Walls</h3>
-                    <p className="text-3xl font-bold text-green-400">
-                      {optionsWalls.supportWalls?.length || 0}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      Put-heavy strikes below price
-                    </p>
-                  </div>
-                  <div className="bg-gray-800 rounded-lg p-4">
-                    <h3 className="text-sm text-gray-400 mb-2">Resistance Walls</h3>
-                    <p className="text-3xl font-bold text-red-400">
-                      {optionsWalls.resistanceWalls?.length || 0}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      Call-heavy strikes above price
-                    </p>
-                  </div>
-                </div>
-
-                {/* Open Interest by Strike */}
-                <div className="bg-gray-800 rounded-lg p-6">
-                  <h2 className="text-xl font-semibold mb-4">Open Interest by Strike</h2>
-                  <ResponsiveContainer width="100%" height={350}>
-                    <ComposedChart data={optionsWalls.walls}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                      <XAxis dataKey="strike" stroke="#9CA3AF" />
-                      <YAxis stroke="#9CA3AF" />
-                      <Tooltip
-                        contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
-                        formatter={(value, name) => [value.toLocaleString(), name]}
-                      />
-                      <Legend />
-                      {currentPrice && (
-                        <ReferenceLine
-                          x={currentPrice}
-                          stroke="#FFFFFF"
-                          strokeWidth={2}
-                          label={{
-                            value: 'Current Price',
-                            fill: '#FFFFFF',
-                            fontSize: 12
-                          }}
-                        />
-                      )}
-                      {optionsWalls.maxPain && (
-                        <ReferenceLine
-                          x={optionsWalls.maxPain}
-                          stroke="#F59E0B"
-                          strokeDasharray="5 5"
-                          strokeWidth={2}
-                          label={{
-                            value: 'Max Pain',
-                            fill: '#F59E0B',
-                            fontSize: 12
-                          }}
-                        />
-                      )}
-                      <Bar dataKey="callOI" stackId="oi" fill="#10B981" name="Call OI" />
-                      <Bar dataKey="putOI" stackId="oi" fill="#EF4444" name="Put OI" />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                  <p className="text-xs text-gray-400 mt-2">
-                    High OI strikes act as magnets. Price tends to gravitate toward max pain into expiration.
+              {/* Max Pain & Key Walls */}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <h3 className="text-sm text-gray-400 mb-2">Max Pain</h3>
+                  <p className="text-3xl font-bold text-yellow-400">
+                    ${optionsWalls.maxPain?.toFixed(2) || 'N/A'}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Price where option sellers have minimum pain
                   </p>
                 </div>
-
-                {/* Net Gamma Exposure */}
-                <div className="bg-gray-800 rounded-lg p-6">
-                  <h2 className="text-xl font-semibold mb-4">Net Gamma Exposure by Strike</h2>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <BarChart data={optionsWalls.walls}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                      <XAxis dataKey="strike" stroke="#9CA3AF" />
-                      <YAxis stroke="#9CA3AF" />
-                      <Tooltip
-                        contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
-                        formatter={(value) => value.toExponential(2)}
-                      />
-                      {currentPrice && (
-                        <ReferenceLine
-                          x={currentPrice}
-                          stroke="#FFFFFF"
-                          strokeWidth={2}
-                        />
-                      )}
-                      <Bar dataKey="netGamma" name="Net Gamma">
-                        {optionsWalls.walls.map((entry, index) => (
-                          <Cell
-                            key={`cell-${index}`}
-                            fill={entry.netGamma > 0 ? '#10B981' : '#EF4444'}
-                          />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                  <p className="text-xs text-gray-400 mt-2">
-                    Negative gamma (red) = dealers chase price. Positive gamma (green) = dealers dampen volatility.
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <h3 className="text-sm text-gray-400 mb-2">Support Walls</h3>
+                  <p className="text-3xl font-bold text-green-400">
+                    {optionsWalls.supportWalls?.length || 0}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Put-heavy strikes below price
                   </p>
                 </div>
-
-                {/* Put/Call Ratio by Strike */}
-                <div className="bg-gray-800 rounded-lg p-6">
-                  <h2 className="text-xl font-semibold mb-4">Put/Call Ratio by Strike</h2>
-                  <ResponsiveContainer width="100%" height={250}>
-                    <LineChart data={optionsWalls.walls}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                      <XAxis dataKey="strike" stroke="#9CA3AF" />
-                      <YAxis stroke="#9CA3AF" />
-                      <Tooltip
-                        contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
-                      />
-                      {currentPrice && (
-                        <ReferenceLine
-                          x={currentPrice}
-                          stroke="#FFFFFF"
-                          strokeWidth={2}
-                        />
-                      )}
-                      <ReferenceLine y={1} stroke="#6B7280" strokeDasharray="3 3" label="Neutral" />
-                      <Line
-                        type="monotone"
-                        dataKey="putCallRatio"
-                        stroke="#8B5CF6"
-                        strokeWidth={2}
-                        name="P/C Ratio"
-                        dot={false}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                  <p className="text-xs text-gray-400 mt-2">
-                    P/C &gt; 1 = bearish positioning. P/C &lt; 1 = bullish positioning.
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <h3 className="text-sm text-gray-400 mb-2">Resistance Walls</h3>
+                  <p className="text-3xl font-bold text-red-400">
+                    {optionsWalls.resistanceWalls?.length || 0}
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Call-heavy strikes above price
                   </p>
                 </div>
               </div>
+
+              {/* Open Interest by Strike */}
+              <div className="bg-gray-800 rounded-lg p-6">
+                <h2 className="text-xl font-semibold mb-4">Open Interest by Strike</h2>
+                <ResponsiveContainer width="100%" height={350}>
+                  <ComposedChart data={optionsWalls.walls}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis dataKey="strike" stroke="#9CA3AF" />
+                    <YAxis stroke="#9CA3AF" />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
+                      formatter={(value, name) => [value.toLocaleString(), name]}
+                    />
+                    <Legend />
+                    {currentPrice && (
+                      <ReferenceLine
+                        x={currentPrice}
+                        stroke="#FFFFFF"
+                        strokeWidth={2}
+                        label={{
+                          value: 'Current Price',
+                          fill: '#FFFFFF',
+                          fontSize: 12
+                        }}
+                      />
+                    )}
+                    {optionsWalls.maxPain && (
+                      <ReferenceLine
+                        x={optionsWalls.maxPain}
+                        stroke="#F59E0B"
+                        strokeDasharray="5 5"
+                        strokeWidth={2}
+                        label={{
+                          value: 'Max Pain',
+                          fill: '#F59E0B',
+                          fontSize: 12
+                        }}
+                      />
+                    )}
+                    <Bar dataKey="callOI" stackId="oi" fill="#10B981" name="Call OI" />
+                    <Bar dataKey="putOI" stackId="oi" fill="#EF4444" name="Put OI" />
+                  </ComposedChart>
+                </ResponsiveContainer>
+                <p className="text-xs text-gray-400 mt-2">
+                  High OI strikes act as magnets. Price tends to gravitate toward max pain into expiration.
+                </p>
+              </div>
+
+              {/* Net Gamma Exposure */}
+              <div className="bg-gray-800 rounded-lg p-6">
+                <h2 className="text-xl font-semibold mb-4">Net Gamma Exposure by Strike</h2>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={optionsWalls.walls}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis dataKey="strike" stroke="#9CA3AF" />
+                    <YAxis stroke="#9CA3AF" />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
+                      formatter={(value) => value.toExponential(2)}
+                    />
+                    {currentPrice && (
+                      <ReferenceLine
+                        x={currentPrice}
+                        stroke="#FFFFFF"
+                        strokeWidth={2}
+                      />
+                    )}
+                    <Bar dataKey="netGamma" name="Net Gamma">
+                      {optionsWalls.walls.map((entry, index) => (
+                        <Cell 
+                          key={`cell-${index}`} 
+                          fill={entry.netGamma > 0 ? '#10B981' : '#EF4444'} 
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+                <p className="text-xs text-gray-400 mt-2">
+                  Negative gamma (red) = dealers chase price. Positive gamma (green) = dealers dampen volatility.
+                </p>
+              </div>
+
+              {/* Put/Call Ratio by Strike */}
+              <div className="bg-gray-800 rounded-lg p-6">
+                <h2 className="text-xl font-semibold mb-4">Put/Call Ratio by Strike</h2>
+                <ResponsiveContainer width="100%" height={250}>
+                  <LineChart data={optionsWalls.walls}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis dataKey="strike" stroke="#9CA3AF" />
+                    <YAxis stroke="#9CA3AF" />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
+                    />
+                    {currentPrice && (
+                      <ReferenceLine
+                        x={currentPrice}
+                        stroke="#FFFFFF"
+                        strokeWidth={2}
+                      />
+                    )}
+                    <ReferenceLine y={1} stroke="#6B7280" strokeDasharray="3 3" label="Neutral" />
+                    <Line
+                      type="monotone"
+                      dataKey="putCallRatio"
+                      stroke="#8B5CF6"
+                      strokeWidth={2}
+                      name="P/C Ratio"
+                      dot={false}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+                <p className="text-xs text-gray-400 mt-2">
+                  P/C &gt; 1 = bearish positioning. P/C &lt; 1 = bullish positioning.
+                </p>
+              </div>
+            </div>
             </div>
           )}
 
@@ -1350,94 +1387,94 @@ const MarketStructureAnalysis = ({
           {activeSection === 'volume' && (
             <div className="space-y-6">
               <div className="text-white">
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="bg-gray-800 rounded-lg p-4">
-                    <h3 className="text-sm text-gray-400 mb-2">Point of Control (POC)</h3>
-                    <p className="text-3xl font-bold text-yellow-400">
-                      ${volumeProfile.poc?.priceLevel.toFixed(2) || 'N/A'}
-                    </p>
-                  </div>
-                  <div className="bg-gray-800 rounded-lg p-4">
-                    <h3 className="text-sm text-gray-400 mb-2">Value Area High</h3>
-                    <p className="text-3xl font-bold text-blue-400">
-                      ${volumeProfile.vah?.toFixed(2) || 'N/A'}
-                    </p>
-                  </div>
-                  <div className="bg-gray-800 rounded-lg p-4">
-                    <h3 className="text-sm text-gray-400 mb-2">Value Area Low</h3>
-                    <p className="text-3xl font-bold text-blue-400">
-                      ${volumeProfile.val?.toFixed(2) || 'N/A'}
-                    </p>
-                  </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <h3 className="text-sm text-gray-400 mb-2">Point of Control (POC)</h3>
+                  <p className="text-3xl font-bold text-yellow-400">
+                    ${volumeProfile.poc?.priceLevel.toFixed(2) || 'N/A'}
+                  </p>
                 </div>
-
-                <div className="bg-gray-800 rounded-lg p-6">
-                  <h2 className="text-xl font-semibold mb-4">Volume Profile</h2>
-                  <ResponsiveContainer width="100%" height={500}>
-                    <ComposedChart
-                      layout="vertical"
-                      data={volumeProfile.profile}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                      <XAxis type="number" stroke="#9CA3AF" />
-                      <YAxis
-                        dataKey="priceLevel"
-                        type="number"
-                        stroke="#9CA3AF"
-                        domain={['dataMin', 'dataMax']}
-                        tickFormatter={(val) => `$${val.toFixed(2)}`}
-                      />
-                      <Tooltip
-                        contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
-                        formatter={(value, name) => [value.toLocaleString(), 'Volume']}
-                        labelFormatter={(val) => `Price: $${val.toFixed(2)}`}
-                      />
-                      {currentPrice && (
-                        <ReferenceLine
-                          y={currentPrice}
-                          stroke="#FFFFFF"
-                          strokeWidth={2}
-                          label={{ value: 'Current', fill: '#FFFFFF', fontSize: 11 }}
-                        />
-                      )}
-                      {volumeProfile.poc && (
-                        <ReferenceLine
-                          y={volumeProfile.poc.priceLevel}
-                          stroke="#F59E0B"
-                          strokeWidth={2}
-                          strokeDasharray="5 5"
-                          label={{ value: 'POC', fill: '#F59E0B', fontSize: 11 }}
-                        />
-                      )}
-                      {volumeProfile.vah && (
-                        <ReferenceLine
-                          y={volumeProfile.vah}
-                          stroke="#3B82F6"
-                          strokeDasharray="3 3"
-                          label={{ value: 'VAH', fill: '#3B82F6', fontSize: 10 }}
-                        />
-                      )}
-                      {volumeProfile.val && (
-                        <ReferenceLine
-                          y={volumeProfile.val}
-                          stroke="#3B82F6"
-                          strokeDasharray="3 3"
-                          label={{ value: 'VAL', fill: '#3B82F6', fontSize: 10 }}
-                        />
-                      )}
-                      <Bar
-                        dataKey="volume"
-                        fill="#60A5FA"
-                        opacity={0.7}
-                      />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                  <p className="text-xs text-gray-400 mt-2">
-                    POC = highest traded volume. Value Area = 70% of volume distribution.
-                    Price tends to return to high-volume nodes.
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <h3 className="text-sm text-gray-400 mb-2">Value Area High</h3>
+                  <p className="text-3xl font-bold text-blue-400">
+                    ${volumeProfile.vah?.toFixed(2) || 'N/A'}
+                  </p>
+                </div>
+                <div className="bg-gray-800 rounded-lg p-4">
+                  <h3 className="text-sm text-gray-400 mb-2">Value Area Low</h3>
+                  <p className="text-3xl font-bold text-blue-400">
+                    ${volumeProfile.val?.toFixed(2) || 'N/A'}
                   </p>
                 </div>
               </div>
+
+              <div className="bg-gray-800 rounded-lg p-6">
+                <h2 className="text-xl font-semibold mb-4">Volume Profile</h2>
+                <ResponsiveContainer width="100%" height={500}>
+                  <ComposedChart
+                    layout="vertical"
+                    data={volumeProfile.profile}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis type="number" stroke="#9CA3AF" />
+                    <YAxis 
+                      dataKey="priceLevel" 
+                      type="number"
+                      stroke="#9CA3AF"
+                      domain={['dataMin', 'dataMax']}
+                      tickFormatter={(val) => `$${val.toFixed(2)}`}
+                    />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
+                      formatter={(value, name) => [value.toLocaleString(), 'Volume']}
+                      labelFormatter={(val) => `Price: $${val.toFixed(2)}`}
+                    />
+                    {currentPrice && (
+                      <ReferenceLine
+                        y={currentPrice}
+                        stroke="#FFFFFF"
+                        strokeWidth={2}
+                        label={{ value: 'Current', fill: '#FFFFFF', fontSize: 11 }}
+                      />
+                    )}
+                    {volumeProfile.poc && (
+                      <ReferenceLine
+                        y={volumeProfile.poc.priceLevel}
+                        stroke="#F59E0B"
+                        strokeWidth={2}
+                        strokeDasharray="5 5"
+                        label={{ value: 'POC', fill: '#F59E0B', fontSize: 11 }}
+                      />
+                    )}
+                    {volumeProfile.vah && (
+                      <ReferenceLine
+                        y={volumeProfile.vah}
+                        stroke="#3B82F6"
+                        strokeDasharray="3 3"
+                        label={{ value: 'VAH', fill: '#3B82F6', fontSize: 10 }}
+                      />
+                    )}
+                    {volumeProfile.val && (
+                      <ReferenceLine
+                        y={volumeProfile.val}
+                        stroke="#3B82F6"
+                        strokeDasharray="3 3"
+                        label={{ value: 'VAL', fill: '#3B82F6', fontSize: 10 }}
+                      />
+                    )}
+                    <Bar
+                      dataKey="volume"
+                      fill="#60A5FA"
+                      opacity={0.7}
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+                <p className="text-xs text-gray-400 mt-2">
+                  POC = highest traded volume. Value Area = 70% of volume distribution. 
+                  Price tends to return to high-volume nodes.
+                </p>
+              </div>
+            </div>
             </div>
           )}
 
@@ -1445,105 +1482,119 @@ const MarketStructureAnalysis = ({
           {activeSection === 'correlation' && (
             <div className="space-y-6">
               <div className="text-white">
-                <div className="bg-gray-800 rounded-lg p-6">
-                  <h2 className="text-xl font-semibold mb-4">SPY vs VIX Correlation (14-Day Rolling)</h2>
-                  <ResponsiveContainer width="100%" height={300}>
-                    <ComposedChart data={correlationData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                      <XAxis
-                        dataKey="timestamp"
-                        stroke="#9CA3AF"
-                        tickFormatter={(ts) => new Date(ts).toLocaleDateString()}
-                        tick={{ fontSize: 11 }}
-                      />
-                      <YAxis
-                        yAxisId="left"
-                        domain={[-1, 1]}
-                        stroke="#9CA3AF"
-                        label={{ value: 'Correlation', angle: -90, position: 'insideLeft' }}
-                      />
-                      <Tooltip
-                        contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
-                        formatter={(value, name) => [
-                          name === 'spyVixCorr' ? value.toFixed(3) : value.toFixed(2),
-                          name
-                        ]}
-                        labelFormatter={(ts) => new Date(ts).toLocaleDateString()}
-                      />
-                      <Legend />
-                      <ReferenceLine y={0} stroke="#6B7280" />
-                      <ReferenceLine y={-0.5} stroke="#EF4444" strokeDasharray="3 3" />
-                      <Area
-                        type="monotone"
-                        dataKey="spyVixCorr"
-                        stroke="#8B5CF6"
-                        fill="#8B5CF6"
-                        fillOpacity={0.3}
-                        name="SPY-VIX Correlation"
-                        yAxisId="left"
-                      />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                  <p className="text-xs text-gray-400 mt-2">
-                    Typically negative (-0.7 to -0.9). Breaking toward zero or positive = potential regime change.
-                  </p>
-                </div>
+              {correlationData.length > 0 ? (
+                <>
+              <div className="bg-gray-800 rounded-lg p-6">
+                <h2 className="text-xl font-semibold mb-4">SPY vs VIX Correlation (14-Day Rolling)</h2>
+                <ResponsiveContainer width="100%" height={300}>
+                  <ComposedChart data={correlationData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis 
+                      dataKey="timestamp" 
+                      stroke="#9CA3AF"
+                      tickFormatter={(ts) => new Date(ts).toLocaleDateString()}
+                      tick={{ fontSize: 11 }}
+                      type="number"
+                      domain={['dataMin', 'dataMax']}
+                    />
+                    <YAxis 
+                      yAxisId="left"
+                      domain={[-1, 1]} 
+                      stroke="#9CA3AF" 
+                      label={{ value: 'Correlation', angle: -90, position: 'insideLeft' }}
+                    />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1F2937', border: '1px solid #374151' }}
+                      formatter={(value, name) => [
+                        name === 'spyVixCorr' ? value.toFixed(3) : value.toFixed(2),
+                        name
+                      ]}
+                      labelFormatter={(ts) => new Date(ts).toLocaleDateString()}
+                    />
+                    <Legend />
+                    <ReferenceLine y={0} stroke="#6B7280" />
+                    <ReferenceLine y={-0.5} stroke="#EF4444" strokeDasharray="3 3" />
+                    <Area
+                      type="monotone"
+                      dataKey="spyVixCorr"
+                      stroke="#8B5CF6"
+                      fill="#8B5CF6"
+                      fillOpacity={0.3}
+                      name="SPY-VIX Correlation"
+                      yAxisId="left"
+                    />
+                  </ComposedChart>
+                </ResponsiveContainer>
+                <p className="text-xs text-gray-400 mt-2">
+                  Typically negative (-0.7 to -0.9). Breaking toward zero or positive = potential regime change.
+                </p>
+              </div>
 
-                <div className="grid grid-cols-2 gap-6">
-                  <div className="bg-gray-800 rounded-lg p-6">
-                    <h3 className="text-lg font-semibold mb-4">Current Correlations</h3>
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center p-3 bg-gray-700/50 rounded">
-                        <span>SPY vs VIX</span>
-                        <span className="font-bold text-purple-400">
-                          {correlationData.length > 0
-                            ? correlationData[correlationData.length - 1].spyVixCorr.toFixed(3)
-                            : 'N/A'
-                          }
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center p-3 bg-gray-700/50 rounded">
-                        <span>Correlation Strength</span>
-                        <span className={
-                          Math.abs(correlationData[correlationData.length - 1]?.spyVixCorr || 0) > 0.7
-                            ? 'font-bold text-green-400'
-                            : Math.abs(correlationData[correlationData.length - 1]?.spyVixCorr || 0) > 0.4
-                              ? 'font-bold text-yellow-400'
-                              : 'font-bold text-red-400'
-                        }>
-                          {Math.abs(correlationData[correlationData.length - 1]?.spyVixCorr || 0) > 0.7
-                            ? 'Strong'
-                            : Math.abs(correlationData[correlationData.length - 1]?.spyVixCorr || 0) > 0.4
-                              ? 'Moderate'
-                              : 'Weak'
-                          }
-                        </span>
-                      </div>
+              <div className="grid grid-cols-2 gap-6">
+                <div className="bg-gray-800 rounded-lg p-6">
+                  <h3 className="text-lg font-semibold mb-4">Current Correlations</h3>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center p-3 bg-gray-700/50 rounded">
+                      <span>SPY vs VIX</span>
+                      <span className="font-bold text-purple-400">
+                        {correlationData.length > 0 
+                          ? correlationData[correlationData.length - 1].spyVixCorr.toFixed(3)
+                          : 'N/A'
+                        }
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center p-3 bg-gray-700/50 rounded">
+                      <span>Correlation Strength</span>
+                      <span className={
+                        Math.abs(correlationData[correlationData.length - 1]?.spyVixCorr || 0) > 0.7
+                          ? 'font-bold text-green-400'
+                          : Math.abs(correlationData[correlationData.length - 1]?.spyVixCorr || 0) > 0.4
+                          ? 'font-bold text-yellow-400'
+                          : 'font-bold text-red-400'
+                      }>
+                        {Math.abs(correlationData[correlationData.length - 1]?.spyVixCorr || 0) > 0.7
+                          ? 'Strong'
+                          : Math.abs(correlationData[correlationData.length - 1]?.spyVixCorr || 0) > 0.4
+                          ? 'Moderate'
+                          : 'Weak'
+                        }
+                      </span>
                     </div>
                   </div>
+                </div>
 
-                  <div className="bg-gray-800 rounded-lg p-6">
-                    <h3 className="text-lg font-semibold mb-4">Interpretation</h3>
-                    <div className="space-y-2 text-sm">
-                      <p className="text-gray-300">
-                        <span className="text-purple-400 font-semibold">Strong Negative (-0.7 to -1):</span> Normal market conditions. VIX rises when SPY falls.
-                      </p>
-                      <p className="text-gray-300">
-                        <span className="text-yellow-400 font-semibold">Weakening Correlation (-0.3 to -0.7):</span> Potential regime shift. Monitor closely.
-                      </p>
-                      <p className="text-gray-300">
-                        <span className="text-red-400 font-semibold">Positive Correlation (0 to +1):</span> Unusual. Both rising = crisis. Both falling = complacency.
-                      </p>
-                    </div>
+                <div className="bg-gray-800 rounded-lg p-6">
+                  <h3 className="text-lg font-semibold mb-4">Interpretation</h3>
+                  <div className="space-y-2 text-sm">
+                    <p className="text-gray-300">
+                      <span className="text-purple-400 font-semibold">Strong Negative (-0.7 to -1):</span> Normal market conditions. VIX rises when SPY falls.
+                    </p>
+                    <p className="text-gray-300">
+                      <span className="text-yellow-400 font-semibold">Weakening Correlation (-0.3 to -0.7):</span> Potential regime shift. Monitor closely.
+                    </p>
+                    <p className="text-gray-300">
+                      <span className="text-red-400 font-semibold">Positive Correlation (0 to +1):</span> Unusual. Both rising = crisis. Both falling = complacency.
+                    </p>
                   </div>
                 </div>
               </div>
+              </>
+              ) : (
+                <div className="bg-gray-800 rounded-lg p-12 text-center">
+                  <AlertTriangle size={48} className="mx-auto mb-4 text-yellow-500" />
+                  <h3 className="text-xl font-bold mb-2">Insufficient Data for Correlation</h3>
+                  <p className="text-gray-400">
+                    Need at least 15 days of data to calculate rolling correlation. 
+                    Currently have {processedData.length} days.
+                  </p>
+                </div>
+              )}
+            </div>
             </div>
           )}
         </div>
       </div>
     </div>
-
   );
 };
 
